@@ -12,7 +12,11 @@
     <header>
       <div class="masthead">
         <h1 class="title-plain">groundtruth</h1>
-        <p class="tagline">Is that website down, blocked, or has the internet been switched off?</p>
+        <p class="tagline">Is that website down, blocked, or has the internet been switched off?<span class="cursor">_</span></p>
+      </div>
+      <div class="ticker" aria-label="Latest results">
+        <span class="ticker-label">LATEST</span>
+        <div class="ticker-window"><div class="ticker-track" id="ticker"></div></div>
       </div>
     </header>
 
@@ -35,7 +39,7 @@
         <h3>Status</h3>
         <p class="meta">
           <span>Connection: <span id="ws-status" class="pill">connecting</span></span>
-          <span>Arkiv block: <span id="head" class="mono">--------</span></span>
+          <span>Arkiv block: <span id="head" class="counter">--------</span></span>
           <span>Network: Tiramisu (test)</span>
         </p>
       </div>

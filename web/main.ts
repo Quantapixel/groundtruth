@@ -365,7 +365,23 @@ function renderEvidence() {
     : `<tr><td class="muted">No blocking recorded yet.</td></tr>`
 }
 
+// The ticker under the masthead repeats the newest feed lines as plain text.
+const tickerItems: string[] = []
+function renderTicker() {
+  const items = tickerItems.length
+    ? tickerItems
+    : ["Waiting for the next round of results", "Every result is saved to Arkiv and cannot be edited", "Anyone can check the data without this website"]
+  const line = items.map((t) => `<span>${esc(t)}</span>`).join("")
+  // Two copies side by side so the scroll loops without a gap.
+  $("ticker").innerHTML = line + line
+}
+
 function feed(html: string, key?: Hex) {
+  const text = document.createElement("div")
+  text.innerHTML = html
+  tickerItems.unshift(`${new Date().toLocaleTimeString()}  ${text.textContent ?? ""}`)
+  tickerItems.length = Math.min(tickerItems.length, 8)
+  renderTicker()
   const li = document.createElement("li")
   li.innerHTML = `<time>${new Date().toLocaleTimeString()}</time>${html}${key ? ` <a class="mono small" href="${EXPLORER}/entity/${key}" target="_blank" rel="noopener">${short(key)}</a>` : ""}`
   const ol = $("feed")
@@ -440,6 +456,7 @@ $<HTMLInputElement>("show-lab").addEventListener("change", (ev) => {
 })
 
 renderVerify()
+renderTicker()
 await loadAll().catch(showError)
 watch()
 setInterval(() => {
