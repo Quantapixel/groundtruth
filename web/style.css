@@ -255,7 +255,7 @@ td .v-blocked, .summary .v-blocked { animation: pulse 1.8s ease-in-out infinite;
 table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; border: 2px inset #e3e5de; }
 th, td { text-align: left; padding: 5px 10px; vertical-align: top; border-bottom: 1px solid #e1e3dc; }
 th { background: linear-gradient(180deg, #5a96e3 0%, #2f66b5 100%); color: #fff; font-weight: bold; border-bottom: 1px solid #1d4a8a; white-space: nowrap; text-shadow: 1px 1px 0 rgb(0 0 0 / 0.25); }
-th .muted { color: #dce8f8; }
+th .muted, th .lab { color: #dce8f8; }
 tr:nth-child(even) td { background: #f6f8fb; }
 td.cell { cursor: pointer; white-space: nowrap; }
 td.cell:hover { background: #fff6d5; }

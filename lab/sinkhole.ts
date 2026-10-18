@@ -42,12 +42,18 @@ server.on("message", (msg, rinfo) => {
     return
   }
   const upstream = dgram.createSocket("udp4")
+  let open = true
+  const close = () => {
+    if (open) upstream.close()
+    open = false
+  }
   upstream.once("message", (reply) => {
     server.send(reply, rinfo.port, rinfo.address)
-    upstream.close()
+    close()
   })
+  upstream.on("error", close)
   upstream.send(msg, 53, "1.1.1.1")
-  setTimeout(() => upstream.close(), 5000).unref()
+  setTimeout(close, 5000).unref()
 })
 
 server.bind(Number(values.port), "127.0.0.1", () =>
