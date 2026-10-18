@@ -155,7 +155,7 @@ function watch() {
   wsClient.watchEntityEvents({
     // The event carries the owner, so creations by unrelated wallets cost no query at all.
     onEntityCreated: (ev) => {
-      status.textContent = "● LIVE"
+      status.textContent = "live"
       status.className = "pill live"
       if (knownProbeWallets().has(ev.owner.toLowerCase())) queueIncrement()
     },
@@ -181,7 +181,7 @@ function watch() {
       console.error(err)
     },
   })
-  status.textContent = "● LIVE"
+  status.textContent = "live"
   status.className = "pill live"
 }
 
@@ -190,7 +190,7 @@ function checkLeases() {
   for (const [creator, p] of state.leases) {
     if (secondsLeft(p.expiresAt) <= 0) {
       state.leases.delete(creator)
-      feed(`${label(p)} lease expired: <b>network dark</b>`, p.key)
+      feed(`${label(p)} lease expired, network dark`, p.key)
     }
   }
 }
@@ -210,7 +210,7 @@ function scheduleRender() {
 const esc = (s: unknown) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 const short = (h: string) => `${h.slice(0, 6)}…${h.slice(-4)}`
-const labTag = (lab: number) => (lab ? `<span class="lab">LAB</span>` : "")
+const labTag = (lab: number) => (lab ? `<span class="lab">lab</span>` : "")
 const label = (p: { isp: string; asn: number; lab: number }) => `${esc(p.isp)} (AS${p.asn})${labTag(p.lab)}`
 const ago = (ts: number) => {
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts))
@@ -282,10 +282,10 @@ function renderRegions(ps: ProbeInfo[]) {
             return `<div class="probe"><span>${label(p)} <a class="mono" href="${EXPLORER}/address/${p.creator}" target="_blank" rel="noopener">${short(p.creator)}</a></span>${st}</div>`
           })
           .join("")
-        const badge = dark ? `<span class="pill v-dark">DARK: suspected shutdown</span>` : `<span class="pill v-ok">online</span>`
+        const badge = dark ? `<span class="pill v-dark">dark: possible shutdown</span>` : `<span class="pill v-ok">online</span>`
         return `<div class="region ${dark ? "dark" : ""}"><h3><span>${esc(region)}</span>${badge}</h3>${rows}</div>`
       })
-      .join("") || `<p class="nosignal">NO PROBES ONLINE</p>`
+      .join("") || `<p class="nosignal">no probes have reported in the last 30 minutes</p>`
 }
 
 function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
@@ -303,7 +303,7 @@ function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
 function renderGrid(ps: ProbeInfo[]) {
   const latest = latestByTargetAndProbe()
   const grid = $("grid")
-  $("empty").textContent = latest.size ? "" : "NO SIGNAL :: waiting for probe reports"
+  $("empty").textContent = latest.size ? "" : "no results yet, waiting for probes"
   if (!latest.size) {
     grid.innerHTML = ""
     return
@@ -351,7 +351,7 @@ function renderEvidence() {
           return `<tr><td>${new Date(m.ts * 1000).toLocaleString()}</td><td class="target">${esc(m.target)}</td><td>${label(m)}</td><td>${esc(m.region)}</td><td><span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span></td><td>${keep}</td><td class="cell" data-key="${m.key}"><span class="mono">${short(m.key)}</span></td></tr>`
         })
         .join("")
-    : `<tr><td class="muted">no interference recorded. yet.</td></tr>`
+    : `<tr><td class="muted">no interference recorded</td></tr>`
 }
 
 function feed(html: string, key?: Hex) {
@@ -453,11 +453,11 @@ function showError(err: unknown) {
   const banner = $("banner")
   if (/ANON_COST_LIMITED|429/.test(text)) {
     const wait = retryAfterSeconds(err)
-    banner.innerHTML = `<b>ARKIV PUBLIC QUERY BUDGET USED UP FOR YOUR NETWORK.</b> Arkiv gives every IP a free query budget${
+    banner.innerHTML = `<b>Arkiv query limit reached for your network.</b> Arkiv gives every IP a free query budget${
       wait ? `; yours resets in about ${Math.ceil(wait / 60)} min` : ""
     }. The data is still on-chain: try again later, from another network, or with the curl command below and an <a href="https://hub.arkiv.network" target="_blank" rel="noopener">Arkiv API key</a>.`
   } else {
-    banner.innerHTML = `<b>COULD NOT REACH ARKIV.</b> ${esc((err as any)?.shortMessage ?? (err as any)?.message ?? err)}`
+    banner.innerHTML = `<b>Could not reach Arkiv.</b> ${esc((err as any)?.shortMessage ?? (err as any)?.message ?? err)}`
   }
   banner.hidden = false
 }
