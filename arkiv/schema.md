@@ -19,7 +19,7 @@ All Groundtruth entities carry `project = "groundtruth"`, so every query starts 
 | `region` | str | Coarse region, e.g. `IN-Punjab`. Never an address, city block or IP |
 | `verdict` | str | `ok`, `dns_tampered`, `block_page`, `unreachable` or `http_error` (definitions below) |
 | `ok` | i32 | `1` if `verdict = ok`, else `0`. Lets a query count failures with a numeric filter |
-| `latencyMs` | i32 | Time to the HTTP response, in milliseconds (`0` when the request was skipped) |
+| `latency_ms` | i32 | Time to the HTTP response, in milliseconds (`0` when the request was skipped) |
 | `ts` | i32 | Unix seconds when the round ran. Numeric so it supports range queries |
 | `lab` | i32 | `1` for a lab probe (simulated ISP), `0` for a real network |
 
@@ -60,7 +60,7 @@ All Groundtruth entities carry `project = "groundtruth"`, so every query starts 
 | `isp` | str | Network name |
 | `region` | str | Coarse region |
 | `lab` | i32 | `1` lab, `0` real |
-| `startedAt` | i32 | Unix seconds when the lease was created |
+| `started_at` | i32 | Unix seconds when the lease was created |
 
 **Payload:** `{ "probeVersion": "0.1.0", "targets": [ ...target ids ] }`.
 

@@ -22,7 +22,7 @@ export type ProbeAttrs = {
   isp: string
   region: string
   lab: number // 1 = lab probe with a documentation-range ASN, 0 = real network
-  startedAt: number
+  started_at: number
 }
 
 // Attributes on a `measurement` entity.
@@ -36,7 +36,7 @@ export type MeasurementAttrs = {
   region: string
   verdict: Verdict
   ok: number // 1 if reachable with no interference, else 0
-  latencyMs: number
+  latency_ms: number
   ts: number // unix seconds
   lab: number
 }

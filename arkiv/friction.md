@@ -100,6 +100,15 @@ Each entry says whether we **reproduced** it ourselves or **inferred** it from t
   - Full reloads went from every 60 seconds to every 5 minutes.
 - **Suggested fix:** Document the budget and per-query costs (the `Arkiv-Cost` and `Arkiv-Quota-Used-Percent` response headers exist but are not in the docs); have the SDK's default transport not wait on long `Retry-After` values and throw a typed error instead; consider a cheaper or exempt path for small, filtered queries so public read-only dashboards stay usable.
 
+## 12. Uppercase letters in attribute names are rejected, but the error says they are allowed (reproduced)
+
+- **Surface:** `executeBatch` / `createEntity` attribute names (SDK 0.8.1, Tiramisu)
+- **Steps:** create an entity with an attribute named `latencyMs` (or `startedAt`).
+- **Expected:** either it works (camelCase is the JavaScript default), or a clear "names must be lowercase" error before sending.
+- **Actual:** the transaction is sent and fails with `Transaction failed: an attribute name holds "M" (0x4d) at byte 7, which is outside the name charset ("A"-"Z", "a"-"z", "0"-"9", ".", "-" and "_", with a letter first)`. The message lists `"A"-"Z"` as allowed while rejecting `M`.
+- **Workaround:** renamed to `latency_ms` and `started_at`. The first real round then landed in tx `0x0af5a973aa40dc161c295148929f5c183611fcd2be5ca970079c8371cd3074af`.
+- **Suggested fix:** validate names client-side in the SDK (it already validates creation flags), and make the error's charset match the rule the chain enforces.
+
 ---
 
 ## Paths that worked first time

@@ -31,7 +31,7 @@ type Measurement = {
   isp: string
   region: string
   verdict: Verdict
-  latencyMs: number
+  latency_ms: number
   ts: number
   lab: number
 }
@@ -328,7 +328,7 @@ function renderGrid(ps: ProbeInfo[]) {
     const liveObs = ps
       .filter((p) => p.lease && row.has(p.creator.toLowerCase()))
       .map((p) => row.get(p.creator.toLowerCase())!)
-      .map((m) => ({ probe: m.creator, verdict: m.verdict, latencyMs: m.latencyMs, ts: m.ts }))
+      .map((m) => ({ probe: m.creator, verdict: m.verdict, latencyMs: m.latency_ms, ts: m.ts }))
     const agg = aggregate(liveObs)
     const where =
       agg === "blocked"
@@ -341,7 +341,7 @@ function renderGrid(ps: ProbeInfo[]) {
       .map((p) => {
         const m = row.get(p.creator.toLowerCase())
         if (!m) return `<td class="muted">–</td>`
-        return `<td class="cell ${p.lease ? "" : "stale"}" data-key="${m.key}"><span class="pill ${verdictClass(m.verdict)}">${VERDICT_LABEL[m.verdict]}</span><br><span class="muted small">${m.latencyMs} ms · ${ago(m.ts)}</span></td>`
+        return `<td class="cell ${p.lease ? "" : "stale"}" data-key="${m.key}"><span class="pill ${verdictClass(m.verdict)}">${VERDICT_LABEL[m.verdict]}</span><br><span class="muted small">${m.latency_ms} ms · ${ago(m.ts)}</span></td>`
       })
       .join("")
     return `<tr><td class="target">${esc(target)}</td><td><span class="pill ${verdictClass(agg)}">${AGG_LABEL[agg]}</span>${where}</td>${cells}</tr>`
@@ -410,7 +410,7 @@ async function showDetail(key: Hex) {
       <dt>Record ID</dt><dd><a class="mono" href="${EXPLORER}/entity/${key}" target="_blank" rel="noopener">${key}</a></dd>
       <dt>Written by</dt><dd><a class="mono" href="${EXPLORER}/address/${e.creator}" target="_blank" rel="noopener">${e.creator}</a> <span class="muted">(the probe's wallet; this can never change)</span></dd>
       <dt>Internet provider</dt><dd>${label(a as any)} · ${esc(a.region)}</dd>
-      <dt>Checked at</dt><dd>${new Date(a.ts * 1000).toLocaleString()} · ${a.latencyMs} ms</dd>
+      <dt>Checked at</dt><dd>${new Date(a.ts * 1000).toLocaleString()} · ${a.latency_ms} ms</dd>
       <dt>Deleted after</dt><dd>about ${Math.round(secondsLeft(e.expiresAt ?? 0n) / 3600)} more hours (block ${e.expiresAt})</dd>
       <dt>Rules</dt><dd>${flags?.readonly ? "locked: nobody can edit it, not even the probe that wrote it" : "can be edited by its owner"} · ${flags?.permissionlessExtension ? "anyone can keep it for longer" : "only its owner can keep it for longer"}</dd>
     </dl>
@@ -509,7 +509,7 @@ function renderSummary(ps: ProbeInfo[]) {
     const obs = ps
       .filter((p) => p.lease && row.has(p.creator.toLowerCase()))
       .map((p) => row.get(p.creator.toLowerCase())!)
-      .map((m) => ({ probe: m.creator, verdict: m.verdict, latencyMs: m.latencyMs, ts: m.ts }))
+      .map((m) => ({ probe: m.creator, verdict: m.verdict, latencyMs: m.latency_ms, ts: m.ts }))
     counts[aggregate(obs)]++
   }
   const live = ps.filter((p) => p.lease).length

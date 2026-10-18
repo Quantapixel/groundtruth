@@ -90,7 +90,7 @@ async function runRound(round: number) {
       region: network.region,
       verdict: r.verdict,
       ok: r.verdict === "ok" ? 1 : 0,
-      latencyMs: Math.min(r.latencyMs, 2_000_000_000),
+      latency_ms: Math.min(r.latencyMs, 2_000_000_000),
       ts,
       lab: network.lab,
     } satisfies MeasurementAttrs,
@@ -128,7 +128,7 @@ function leaseCreate(ts: number) {
       isp: network.isp,
       region: network.region,
       lab: network.lab,
-      startedAt: ts,
+      started_at: ts,
     } satisfies ProbeAttrs,
     expires: ExpirationTime.fromSeconds(PROBE_LEASE_SECONDS),
   }

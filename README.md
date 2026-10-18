@@ -35,7 +35,7 @@ Volunteer probes on different networks test the same list of sites. Every result
 
 | Feature | What it does in Groundtruth | Code |
 |---|---|---|
-| Typed attributes vs payload | Everything the dashboard filters on (`target`, `asn`, `region`, `verdict`, numeric `ts`, `latencyMs`) is an attribute; DNS/HTTP evidence is the JSON payload | [`shared/schema.ts`](shared/schema.ts), [`probe/probe.ts`](probe/probe.ts) |
+| Typed attributes vs payload | Everything the dashboard filters on (`target`, `asn`, `region`, `verdict`, numeric `ts`, `latency_ms`) is an attribute; DNS/HTTP evidence is the JSON payload | [`shared/schema.ts`](shared/schema.ts), [`probe/probe.ts`](probe/probe.ts) |
 | Range and compound queries | `ts >= now - 30 min` for the live view; `verdict = dns_tampered OR verdict = block_page` for the evidence list; cursor pagination | [`web/main.ts`](web/main.ts) |
 | Entity Expiration per type | Lease 3 min (shutdown detection), measurement 48 h (the map shows only current conditions), corroborated evidence 7 days | [`arkiv/schema.md`](arkiv/schema.md) |
 | Lifetime Extension | The lease is renewed only by a probe that reported; evidence is extended when another network confirms it | [`probe/probe.ts`](probe/probe.ts) |
