@@ -1,10 +1,11 @@
-// Records the Groundtruth demo video from a real lab run.
+// Records the Groundtruth demo video from a real lab run, timed to the narration.
 //
-//   node video/record.mjs          # full run: starts the lab, writes to Arkiv, films the dashboard (~9 min)
-//   node video/record.mjs --dry    # pipeline test: no lab, no chain writes
+//   python video/narrate.py <kokoro_dir> video/out/narration      # voice, sound bed, timeline
+//   node video/record.mjs                                          # full run (~10 min, writes to Arkiv)
+//   node video/record.mjs --dry                                    # pipeline test, no lab, no writes
 //
-// Output: video/out/groundtruth-demo.mp4 (1920x1080, H.264, captions burned in, no audio).
-// Every result on screen comes from the live run; time-lapsed parts are labelled as sped up.
+// Output: video/out/groundtruth-demo.mp4 (1920x1080 H.264 + AAC, subtitles burned in).
+// Everything on screen comes from the live run. The one time-lapse is labelled on screen.
 
 import { execSync, spawn } from "node:child_process"
 import fs from "node:fs"
@@ -12,6 +13,7 @@ import path from "node:path"
 
 const ROOT = new URL("..", import.meta.url).pathname
 const OUT = path.join(ROOT, "video/out")
+const NARR = path.join(OUT, "narration")
 const FRAMES = path.join(OUT, "frames")
 const DRY = process.argv.includes("--dry")
 const VIEW = { width: 1120, height: 630, deviceScaleFactor: 1920 / 1120 }
@@ -24,51 +26,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c])
 const log = (m) => console.log(`[video ${new Date().toISOString().slice(11, 19)}] ${m}`)
 
-fs.rmSync(OUT, { recursive: true, force: true })
+const TL = JSON.parse(fs.readFileSync(path.join(NARR, "timeline.json"), "utf8"))
+fs.rmSync(FRAMES, { recursive: true, force: true })
 fs.mkdirSync(FRAMES, { recursive: true })
 
 // ---------- processes ----------
 
 const children = []
-function bg(cmd, args, opts = {}) {
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], ...opts })
+function bg(cmd, args) {
+  const p = spawn(cmd, args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] })
   children.push(p)
   return p
 }
-function cleanup() {
-  for (const p of children) {
-    try {
-      p.kill()
-    } catch {}
-  }
-}
-process.on("exit", cleanup)
+process.on("exit", () => children.forEach((p) => p.kill()))
 process.on("SIGINT", () => process.exit(1))
 
 log("building dashboard")
 execSync("npm run build", { cwd: ROOT, stdio: "ignore" })
 bg("npx", ["vite", "preview", "web", "--port", "4173", "--strictPort"])
-const chrome = bg("google-chrome", [
-  "--headless=new",
-  "--disable-gpu",
-  "--no-sandbox",
-  "--hide-scrollbars",
-  "--remote-debugging-port=9334",
-  `--user-data-dir=${path.join(OUT, "chrome-profile")}`,
-  "about:blank",
+bg("google-chrome", [
+  "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+  "--remote-debugging-port=9334", `--user-data-dir=${path.join(OUT, "chrome-profile")}`, "about:blank",
 ])
 
-// Lab output, kept with timestamps so the terminal scene replays what really happened.
 const labLines = []
 let lab
 if (!DRY) {
   log("starting lab")
   lab = bg(process.execPath, ["lab/run.ts"])
   const onData = (d) =>
-    d
-      .toString()
-      .split("\n")
-      .filter((l) => l.trim() && !l.includes("ExperimentalWarning") && !l.includes("--trace-warnings"))
+    d.toString().split("\n")
+      .filter((l) => l.trim() && !/ExperimentalWarning|trace-warnings/.test(l))
       .forEach((l) => {
         labLines.push(l)
         console.log(`  lab | ${l}`)
@@ -76,21 +64,20 @@ if (!DRY) {
   lab.stdout.on("data", onData)
   lab.stderr.on("data", onData)
 }
-
+const countLines = (re) => labLines.filter((l) => re.test(l)).length
 async function waitFor(pred, timeoutMs, what) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
-    if (pred()) return true
+    if (await pred()) return true
     await sleep(500)
   }
   log(`timed out waiting for ${what}`)
   return false
 }
-const countLines = (re) => labLines.filter((l) => re.test(l)).length
 
 // ---------- browser ----------
 
-async function until(url) {
+async function reachable(url) {
   for (let i = 0; i < 120; i++) {
     try {
       await fetch(url)
@@ -101,18 +88,22 @@ async function until(url) {
   }
   throw new Error(`not reachable: ${url}`)
 }
-await until("http://127.0.0.1:9334/json/version")
-await until(DASH)
+await reachable("http://127.0.0.1:9334/json/version")
+await reachable(DASH)
 
 const tab = await (await fetch("http://127.0.0.1:9334/json/new?about:blank", { method: "PUT" })).json()
 const ws = new WebSocket(tab.webSocketDebuggerUrl)
 let msgId = 0
 const pending = new Map()
+let castFrames = null
 ws.onmessage = (m) => {
   const d = JSON.parse(m.data)
   if (d.id && pending.has(d.id)) {
     pending.get(d.id)(d)
     pending.delete(d.id)
+  } else if (d.method === "Page.screencastFrame") {
+    castFrames?.push({ data: d.params.data, at: Date.now() / 1000 })
+    ws.send(JSON.stringify({ id: ++msgId, method: "Page.screencastFrameAck", params: { sessionId: d.params.sessionId } }))
   }
 }
 await new Promise((r) => (ws.onopen = r))
@@ -132,218 +123,292 @@ async function evaluate(expression) {
 await send("Page.enable")
 await send("Emulation.setDeviceMetricsOverride", { ...VIEW, mobile: false })
 
-async function go(url, settleMs = 1500) {
-  await send("Page.navigate", { url })
-  await sleep(settleMs)
-}
-
-// Caption bar burned into every frame, in the dashboard's own colours.
-async function caption(html, step) {
+// CRT look on every page: scanlines, vignette, flicker; a dark monitor bezel around web pages.
+async function crt(bezel) {
   await evaluate(`(() => {
-    let el = document.getElementById("__cap")
-    if (!el) {
-      el = document.createElement("div")
-      el.id = "__cap"
-      Object.assign(el.style, {
-        position: "fixed", left: "0", right: "0", bottom: "0", zIndex: "2147483647",
-        padding: "12px 26px 14px", background: "rgba(16,40,74,0.95)", borderTop: "4px solid #f39c12",
-        color: "#fff", font: "21px/1.45 Verdana, Geneva, sans-serif",
-      })
-      document.body.appendChild(el)
-    }
-    el.innerHTML = ${JSON.stringify(step ? `<b style="color:#ffd166">${step}</b>&nbsp;&nbsp;${html}` : html)}
-    el.style.display = ${JSON.stringify(html ? "block" : "none")}
+    document.getElementById("__crt")?.remove()
+    const s = document.createElement("style")
+    s.textContent = \`
+      #__crt { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
+      #__crt .scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px); animation: __flick 4s infinite; }
+      #__crt .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 58%, rgb(0 0 0 / 0.7) 100%); }
+      #__crt .bez { position: absolute; inset: 16px; border-radius: 26px; box-shadow: 0 0 0 40px #030403, inset 0 0 70px rgb(0 0 0 / 0.75), inset 0 0 0 2px rgb(120 255 120 / 0.10); }
+      #__crt .tag { position: absolute; top: 30px; right: 44px; padding: 4px 12px; font: bold 22px "Liberation Mono", monospace; color: #050806; background: #ffc35a; letter-spacing: 0.08em; }
+      @keyframes __flick { 0%, 100% { opacity: 1 } 47% { opacity: 0.92 } 48% { opacity: 1 } 73% { opacity: 0.95 } }
+    \`
+    const d = document.createElement("div")
+    d.id = "__crt"
+    d.innerHTML = '<div class="scan"></div><div class="vig"></div>' + (${bezel} ? '<div class="bez"></div>' : '')
+    d.appendChild(s)
+    document.documentElement.appendChild(d)
+    // Dim bright web pages a little so they sit in the dark CRT frame.
+    if (${bezel}) document.body.style.filter = "brightness(0.86) contrast(1.06) saturate(0.95)"
   })()`)
 }
-
-async function scrollTo(selector, offset = 10) {
+async function badge(text) {
+  await evaluate(`(() => { const c = document.getElementById("__crt"); c?.querySelector(".tag")?.remove(); if (${JSON.stringify(text)}) c?.insertAdjacentHTML("beforeend", '<div class="tag">' + ${JSON.stringify(text)} + '</div>') })()`)
+}
+async function staticNoise(on) {
+  await evaluate(on
+    ? `(() => {
+        const c = document.createElement("canvas"); c.id = "__static"; c.width = 320; c.height = 180
+        Object.assign(c.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", zIndex: "2147483647", imageRendering: "pixelated" })
+        document.documentElement.appendChild(c)
+        const g = c.getContext("2d"), img = g.createImageData(320, 180)
+        const draw = () => { if (!c.isConnected) return; for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255 | 0; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255 } g.putImageData(img, 0, 0); requestAnimationFrame(draw) }
+        draw()
+      })()`
+    : `document.getElementById("__static")?.remove()`)
+}
+async function go(url, settleMs, bezel) {
+  await send("Page.navigate", { url })
+  await sleep(settleMs)
+  await crt(bezel)
+}
+async function scrollTo(selector, offset = 24) {
   await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.scrollIntoView({ block: "start" }); window.scrollBy(0, -${offset}) } })()`)
-  await sleep(300)
 }
 
 // ---------- filming ----------
 
-let frameNo = 0
 const frames = []
-// Films `seconds` of video. speed > 1 is a time-lapse: real time = seconds * speed.
-async function film(seconds, { every = 0.2, speed = 1, stopWhen } = {}) {
-  const start = Date.now()
-  const realMs = seconds * speed * 1000
-  while (Date.now() - start < realMs) {
-    const t0 = Date.now()
-    const r = await send("Page.captureScreenshot", { format: "jpeg", quality: 90 })
-    const file = path.join(FRAMES, `${String(frameNo++).padStart(6, "0")}.jpg`)
-    fs.writeFileSync(file, Buffer.from(r.data, "base64"))
-    await sleep(Math.max(0, every * speed * 1000 - (Date.now() - t0)))
-    frames.push({ file, dur: (Date.now() - t0) / 1000 / speed })
-    if (stopWhen && (await stopWhen())) break
-  }
+let frameNo = 0
+function keep(data, dur) {
+  const file = path.join(FRAMES, `${String(frameNo++).padStart(6, "0")}.jpg`)
+  fs.writeFileSync(file, Buffer.from(data, "base64"))
+  frames.push({ file, dur })
 }
 
-async function card(html, seconds, cap, step) {
-  await go(STAGE, 600)
-  await evaluate(`document.getElementById("stage").innerHTML = ${JSON.stringify(html)}`)
-  await caption(cap ?? "", step)
-  await film(seconds)
+// Films exactly `dur` seconds in real time. `act(at)` runs scene actions; at(t) waits until t s into the scene.
+async function film(dur, act = async () => {}) {
+  castFrames = []
+  const t0 = Date.now() / 1000
+  await send("Page.startScreencast", { format: "jpeg", quality: 85, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 })
+  const at = async (t) => {
+    const w = t0 + t - Date.now() / 1000
+    if (w > 0) await sleep(w * 1000)
+  }
+  await act(at)
+  await at(dur)
+  await send("Page.stopScreencast")
+  const got = castFrames.filter((f) => f.at <= t0 + dur)
+  castFrames = null
+  if (!got.length) got.push({ data: (await send("Page.captureScreenshot", { format: "jpeg", quality: 85 })).data, at: t0 })
+  got.forEach((f, i) => {
+    const start = i === 0 ? t0 : f.at
+    const end = i + 1 < got.length ? got[i + 1].at : t0 + dur
+    keep(f.data, Math.max(0.001, end - start))
+  })
+}
+
+// Squeezes a long real-time wait into `dur` seconds of video.
+async function timelapse(dur, stopWhen, maxRealS = 300) {
+  const shots = []
+  const start = Date.now()
+  while (Date.now() - start < maxRealS * 1000) {
+    shots.push((await send("Page.captureScreenshot", { format: "jpeg", quality: 85 })).data)
+    if (await stopWhen()) break
+    await sleep(1000)
+  }
+  for (let i = 0; i < 4; i++) shots.push((await send("Page.captureScreenshot", { format: "jpeg", quality: 85 })).data)
+  const speed = ((Date.now() - start) / 1000 / dur).toFixed(0)
+  shots.forEach((d) => keep(d, dur / shots.length))
+  log(`time-lapse: ${shots.length} frames, about ${speed}x`)
 }
 
 function colour(line) {
   return esc(line)
-    .replace(/(0x[0-9a-fA-F]{8})[0-9a-fA-F]{40,}/g, "$1…")
+    .replace(/(0x[0-9a-fA-F]{6})[0-9a-fA-F]{30,}/g, "$1…")
     .replace(/(dns_tampered|block_page|-&gt; 0\.0\.0\.0)/g, '<span class="bad">$1</span>')
     .replace(/(:ok)\b/g, '<span class="ok">$1</span>')
-    .replace(/(unreachable)/g, '<span class="hl">$1</span>')
-    .replace(/(corroborated[^<]*)/g, '<span class="hl">$1</span>')
+    .replace(/(unreachable|corroborated[^<]*)/g, '<span class="hl">$1</span>')
     .replace(/^(\[[a-z-]+\])/, '<span class="dim">$1</span>')
 }
 
-async function terminal(title, lines, seconds, cap, step) {
-  await go(STAGE, 600)
-  await evaluate(`document.getElementById("stage").innerHTML = ${JSON.stringify(
-    `<div class="term"><div class="term-bar">${esc(title)}</div><pre id="t"></pre></div>`,
-  )}`)
-  await caption(cap, step)
-  const per = Math.max(0.15, (seconds * 0.6) / Math.max(1, lines.length))
-  for (const l of lines) {
-    await evaluate(`document.getElementById("t").insertAdjacentHTML("beforeend", ${JSON.stringify(colour(l) + "\n")})`)
-    await film(per)
-  }
-  await film(seconds * 0.4)
-}
+// ---------- scenes, in timeline order ----------
 
-// ---------- the video ----------
+const items = TL.items
+const sceneOf = (id) => items.find((i) => i.type === "scene" && i.id === id)
+let blockedKey
 
-const tag = (cls, t) => `<span class="tag ${cls}">${t}</span>`
+const SCENES = {
+  async title(s) {
+    await go(STAGE, 1500, false)
+    await evaluate(`show(${JSON.stringify(`<div class="title"><h1 class="glow" data-text="GROUNDTRUTH">GROUNDTRUTH</h1><p class="amber">down &middot; blocked &middot; switched off<span class="cursor">_</span></p><div class="rule"></div></div>`)})`)
+    await film(s.dur)
+  },
 
-await card(
-  `<div class="card"><div class="bar"><h1>groundtruth</h1><p class="sub">Is that website down, blocked, or has the internet been switched off?</p></div>
-   <div class="body"><p>A censorship and outage map that nobody can take down.</p>
-   <p>${tag("", "Built on Arkiv")}${tag("", "Censorship Resistance")}${tag("", "Open Source")}</p></div></div>`,
-  6,
-)
-
-await card(
-  `<div class="card"><div class="bar"><h1 style="font-size:44px">The problem</h1></div><div class="body">
-   <p>India orders internet shutdowns more often than almost any other country, and website-blocking orders are confidential.</p>
-   <p>When a site won't load, people can't tell whether it is ${tag("orange", "down")}, ${tag("red", "blocked")} by their provider, or ${tag("grey", "switched off")}.</p>
-   <p>And the trackers that document this run on servers that can be blocked too.</p></div></div>`,
-  9,
-)
-
-if (!DRY) {
-  log("waiting for the first round from all three probes")
-  await waitFor(() => ["probe-a", "probe-b", "probe-c"].every((p) => labLines.some((l) => l.startsWith(`[${p}]`) && /round 1 /.test(l))), 180_000, "round 1")
-}
-const interesting = labLines.filter((l) => /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, 14)
-await terminal(
-  "npm run lab",
-  interesting.length ? interesting : ["(dry run: no lab output)"],
-  12,
-  "Three probes on simulated providers. Lab ISPs A and B use a censoring resolver that answers 0.0.0.0 for torproject.org. Every round is one atomic Arkiv batch: the results plus the probe's “still here” signal.",
-  "1/6",
-)
-
-await go(DASH, 7000)
-await caption("This page has no backend. It reads the results straight from Arkiv, the Web3 database.", "2/6")
-await scrollTo(".page", 0)
-await film(5)
-await scrollTo("#now")
-await caption("Each row is a website, each column a provider. torproject.org is blocked on A and B and works on C, so it's censorship, not an outage.", "2/6")
-await film(7)
-
-const blockedKey = await evaluate(`(() => { const td = [...document.querySelectorAll("#grid td.cell")].find((t) => /blocked/.test(t.textContent)); if (td) { td.click(); return td.dataset.key } })()`)
-await sleep(2500)
-await caption("Click any result: the raw record on Arkiv. It is locked, so nobody can edit it, not even the probe that wrote it. The probe's DNS answer was 0.0.0.0; the control resolver returned the real address.", "2/6")
-await film(8)
-await evaluate(`document.getElementById("detail")?.close()`)
-
-if (!DRY) {
-  log("stopping the lab site")
-  lab.stdin.write("s")
-  const before = countLines(/lab-site:unreachable/)
-  await waitFor(() => countLines(/lab-site:unreachable/) >= before + 3, 150_000, "lab-site unreachable from all probes")
-  await sleep(6000)
-}
-await scrollTo("#now")
-await caption("Now the lab site is switched off. Every provider fails to reach it, so it shows as down everywhere, not blocked.", "3/6")
-await film(7)
-
-if (!DRY) {
-  log("stopping probe C")
-  lab.stdin.write("c")
-}
-await scrollTo("#networks")
-await caption("Probe C, the only probe in IN-LAB-SOUTH, stops reporting. Its “still here” entity on Arkiv is no longer renewed… <b style='color:#ffd166'>(sped up 15×)</b>", "4/6")
-await film(DRY ? 4 : 14, {
-  every: 0.4,
-  speed: DRY ? 1 : 15,
-  stopWhen: DRY ? undefined : () => evaluate(`!!document.querySelector(".region.dark")`),
-})
-await caption("…so it expires, and the region is marked silent: a possible shutdown. Nobody can fake that silence, because the signal lives on Arkiv, not on a server.", "4/6")
-await film(6)
-
-await scrollTo("#evidence-win")
-const confirmed = await evaluate(`/confirmed by another provider/.test(document.getElementById("evidence")?.textContent ?? "")`)
-await caption(
-  confirmed
-    ? "Evidence of blocking. A probe on a different provider saw the same block and extended this record from 48 hours to 7 days. Anyone can do that; nobody can edit it."
-    : "Evidence of blocking: every DNS tampering or block-page result, locked on Arkiv and kept for 48 hours, or 7 days once another provider confirms it.",
-  "5/6",
-)
-await film(7)
-
-// Same query anyone can run, with no Groundtruth code.
-const since = Math.floor(Date.now() / 1000) - 1800
-const query = `project = str('groundtruth') AND kind = str('measurement') AND ts >= i32(${since})`
-let summary = "(request failed)"
-try {
-  const res = await (
-    await fetch(RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "arkiv_query", params: [query, { select: { key: true, creator: true, attributes: true }, limit: "0xc8" }] }),
+  async problem(s) {
+    await go(STAGE, 800, false)
+    await evaluate(`show(${JSON.stringify(`<div class="story glow">
+      <p class="line"><span class="prompt">&gt;</span>site <span class="amber">down</span>?</p>
+      <p class="line"><span class="prompt">&gt;</span><span class="red">blocked</span> by your provider, on a secret order?</p>
+      <p class="line"><span class="prompt">&gt;</span>internet <span class="grey">switched off</span>?</p>
+      <p class="line"><span class="prompt">&gt;</span>groundtruth tells them apart.<span class="cursor">_</span></p></div>`)})`)
+    await film(s.dur, async (at) => {
+      await at(s.sents[0].start); await evaluate("reveal(0)")
+      await at(s.sents[0].start + 1.6); await evaluate("reveal(1)")
+      await at(s.sents[1].start); await evaluate("reveal(2)")
+      await at(s.sents[2].start); await evaluate("reveal(3)")
     })
-  ).json()
-  const data = res.result?.data ?? []
-  const first = data.find((e) => JSON.stringify(e).includes("dns_tampered")) ?? data[0]
-  summary = [`→ ${data.length} measurements in the last 30 minutes`, ...JSON.stringify(first ?? res, null, 1).split("\n").slice(0, 16)].join("\n")
-} catch (e) {
-  summary = String(e)
-}
-await terminal(
-  "anyone, anywhere: no Groundtruth server needed",
-  [`$ curl -s ${RPC} \\`, `    -d '{"method":"arkiv_query","params":["${query}", …]}'`, ...summary.split("\n")],
-  9,
-  "Don't trust our page? The same data comes straight from the Arkiv RPC with one command, or from the public explorer.",
-  "6/6",
-)
+  },
 
-if (blockedKey) {
-  await go(`${EXPLORER}/entity/${blockedKey}`, 6000)
-  await caption("The same blocked result on the Tiramisu explorer: who wrote it, when, and in which transaction.", "6/6")
-  await film(6)
+  async lab(s) {
+    if (!DRY) {
+      log("waiting for round 1 from all three probes")
+      await waitFor(() => ["probe-a", "probe-b", "probe-c"].every((p) => labLines.some((l) => l.startsWith(`[${p}]`) && /round 1 /.test(l))), 240_000, "round 1")
+    }
+    const lines = labLines.filter((l) => /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, 16)
+    await go(STAGE, 800, false)
+    await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; npm run lab</div><pre id="t"></pre></div>`)})`)
+    const shown = lines.length ? lines : ["(dry run: no lab output)"]
+    await film(s.dur, async (at) => {
+      const span = s.sents.at(-1).end - 0.5
+      for (let i = 0; i < shown.length; i++) {
+        await at(0.3 + (span * i) / shown.length)
+        await evaluate(`termLine(${JSON.stringify(colour(shown[i]))})`)
+      }
+    })
+  },
+
+  async dash(s) {
+    await go(DASH, 7000, true)
+    await scrollTo(".page", 0)
+    await film(s.dur, async (at) => {
+      await at(s.sents[1].start - 0.3)
+      await scrollTo("#now")
+    })
+  },
+
+  async detail(s) {
+    blockedKey = await evaluate(`(() => { const td = [...document.querySelectorAll("#grid td.cell")].find((t) => /blocked/.test(t.textContent)); if (td) { td.click(); return td.dataset.key } })()`)
+    await sleep(2500)
+    await film(s.dur)
+    await evaluate(`document.getElementById("detail")?.close()`)
+  },
+
+  async outage(s) {
+    if (!DRY) {
+      log("stopping the lab site")
+      lab.stdin.write("s")
+      const before = countLines(/lab-site:unreachable/)
+      await waitFor(() => countLines(/lab-site:unreachable/) >= before + 3, 180_000, "lab-site unreachable everywhere")
+      await sleep(6000)
+    }
+    await scrollTo("#now")
+    await film(s.dur)
+  },
+
+  async shutdown_a(s) {
+    if (!DRY) {
+      log("stopping probe C")
+      lab.stdin.write("c")
+    }
+    await scrollTo("#networks")
+    await badge("&#9654;&#9654; TIME-LAPSE")
+    if (DRY) await film(s.dur)
+    else await timelapse(s.dur, () => evaluate(`!!document.querySelector(".region.dark")`))
+    await badge("")
+  },
+
+  async shutdown_b(s) {
+    await film(s.dur)
+  },
+
+  async evidence(s) {
+    await scrollTo("#evidence-win")
+    await film(s.dur)
+  },
+
+  async verify(s) {
+    const since = Math.floor(Date.now() / 1000) - 1800
+    const query = `project = str('groundtruth') AND kind = str('measurement') AND ts >= i32(${since})`
+    let out = ["(request failed)"]
+    try {
+      const res = await (await fetch(RPC, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "arkiv_query", params: [query, { select: { key: true, creator: true, attributes: true }, limit: "0xc8" }] }),
+      })).json()
+      const data = res.result?.data ?? []
+      const first = data.find((e) => JSON.stringify(e).includes("dns_tampered")) ?? data[0]
+      out = [`→ ${data.length} measurements in the last 30 minutes`, ...JSON.stringify(first ?? res, null, 1).split("\n").slice(0, 11)]
+    } catch (e) {
+      out = [String(e)]
+    }
+    await go(STAGE, 800, false)
+    await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; anyone, anywhere. no groundtruth server.</div><pre id="t"></pre></div>`)})`)
+    const lines = [`$ curl -s ${RPC} \\`, `   -d '{"method":"arkiv_query","params":["${query}"]}'`, ...out]
+    await film(s.dur, async (at) => {
+      for (let i = 0; i < lines.length; i++) {
+        await at(0.2 + i * 0.22)
+        await evaluate(`termLine(${JSON.stringify(colour(lines[i]))})`)
+      }
+    })
+  },
+
+  async explorer(s) {
+    if (blockedKey) await go(`${EXPLORER}/entity/${blockedKey}`, 6000, true)
+    await film(s.dur)
+  },
+
+  async end(s) {
+    await go(STAGE, 800, false)
+    await evaluate(`show(${JSON.stringify(`<div class="end glow"><h1 data-text="GROUNDTRUTH">GROUNDTRUTH</h1>
+      <p class="amber">quantapixel.github.io/groundtruth</p>
+      <p>github.com/Quantapixel/groundtruth &middot; MIT</p>
+      <p class="dim">built on Arkiv &middot; npm run probe<span class="cursor">_</span></p></div>`)})`)
+    await film(s.dur)
+  },
 }
 
-await card(
-  `<div class="card"><div class="bar"><h1>groundtruth</h1><p class="sub">down, blocked, or switched off?</p></div>
-   <div class="body"><p><b>Live:</b> <span class="mono">quantapixel.github.io/groundtruth</span></p>
-   <p><b>Code (MIT):</b> <span class="mono">github.com/Quantapixel/groundtruth</span></p>
-   <p>Run a probe on your own network: <span class="mono">npm run probe</span></p></div></div>`,
-  6,
-)
+for (const it of items) {
+  if (it.type === "cut") {
+    await staticNoise(true)
+    await film(it.dur)
+    await staticNoise(false)
+  } else {
+    log(`scene ${it.id} (${it.dur}s)`)
+    await SCENES[it.id](it)
+  }
+}
 
 // ---------- render ----------
 
 if (!DRY) lab.stdin.write("q")
 ws.close()
-const list = frames.map((f) => `file '${f.file}'\nduration ${f.dur.toFixed(3)}`).join("\n") + `\nfile '${frames.at(-1).file}'\n`
+
+const list = frames.map((f) => `file '${f.file}'\nduration ${f.dur.toFixed(4)}`).join("\n") + `\nfile '${frames.at(-1).file}'\n`
 fs.writeFileSync(path.join(OUT, "frames.txt"), list)
 fs.writeFileSync(path.join(OUT, "lab.log"), labLines.join("\n"))
+
+const ts = (t) => {
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = (t % 60).toFixed(2).padStart(5, "0")
+  return `${h}:${String(m).padStart(2, "0")}:${s}`
+}
+const subs = items.filter((i) => i.type === "scene").flatMap((sc) => sc.sents.map((x) => ({ a: sc.start + x.start, b: sc.start + x.end + 0.15, text: x.text })))
+fs.writeFileSync(path.join(OUT, "subs.ass"), `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Liberation Mono,40,&H0066CCFF,&H0066CCFF,&H18000000,&H18000000,1,0,0,0,100,100,0,0,3,12,0,2,180,180,58,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${subs.map((x) => `Dialogue: 0,${ts(x.a)},${ts(x.b)},Default,,0,0,0,,${x.text.replace(/\n/g, " ")}`).join("\n")}
+`)
+
 const total = frames.reduce((a, f) => a + f.dur, 0)
-log(`rendering ${frames.length} frames, ${total.toFixed(1)} s`)
+log(`rendering ${frames.length} frames, ${total.toFixed(1)} s video for ${TL.total} s of audio`)
 const mp4 = path.join(OUT, DRY ? "groundtruth-demo-DRY.mp4" : "groundtruth-demo.mp4")
 execSync(
-  `ffmpeg -y -loglevel error -f concat -safe 0 -i "${path.join(OUT, "frames.txt")}" -vf "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p" -c:v libopenh264 -b:v 8M "${mp4}"`,
+  `ffmpeg -y -loglevel error -f concat -safe 0 -i "${path.join(OUT, "frames.txt")}" -i "${path.join(NARR, "audio.wav")}" ` +
+    `-vf "fps=30,scale=1920:1080:flags=lanczos,noise=alls=6:allf=t,ass='${path.join(OUT, "subs.ass")}',format=yuv420p" ` +
+    `-c:v libopenh264 -b:v 9M -c:a aac -b:a 192k -shortest "${mp4}"`,
   { stdio: "inherit" },
 )
 fs.rmSync(path.join(OUT, "chrome-profile"), { recursive: true, force: true })

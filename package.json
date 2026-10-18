@@ -10,7 +10,8 @@
     "build": "vite build web",
     "preview": "vite preview web",
     "lab": "node lab/run.ts",
-    "video": "node video/record.mjs"
+    "video": "node video/record.mjs",
+    "narrate": "python3 video/narrate.py"
   },
   "license": "MIT",
   "dependencies": {
