@@ -110,12 +110,12 @@ async function loadIncrement() {
     const m = toMeasurement(e)
     state.measurements.set(m.key, m)
     if (m.verdict === "dns_tampered" || m.verdict === "block_page") state.evidence.set(m.key, m)
-    feed(`${label(m)} measured <b>${esc(m.target)}</b>: <span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span>`, m.key)
+    feed(`${label(m)} checked <b>${esc(m.target)}</b>: <span class="pill ${verdictClass(m.verdict)}">${VERDICT_LABEL[m.verdict]}</span>`, m.key)
   }
   for (const e of probes) {
     const p = toProbe(e)
     const c = p.creator.toLowerCase()
-    if (!state.leases.has(c)) feed(`${label(p)} came online (lease created)`, p.key)
+    if (!state.leases.has(c)) feed(`${label(p)} came online`, p.key)
     state.leases.set(c, p)
   }
   hideBanner()
@@ -163,14 +163,14 @@ function watch() {
       for (const p of state.leases.values()) {
         if (p.key === ev.entityKey) {
           p.expiresAt = ev.expiresAt
-          feed(`${label(p)} renewed its lease`, p.key)
+          feed(`${label(p)} is still reporting`, p.key)
         }
       }
       for (const map of [state.measurements, state.evidence]) {
         const m = map.get(ev.entityKey)
         if (m && ev.expiresAt > m.expiresAt) {
           m.expiresAt = ev.expiresAt
-          if (map === state.evidence) feed(`Evidence for <b>${esc(m.target)}</b> on ${label(m)} was corroborated by another network`, m.key)
+          if (map === state.evidence) feed(`Blocking of <b>${esc(m.target)}</b> on ${label(m)} was confirmed by another provider, so the record is kept for 7 days`, m.key)
         }
       }
       scheduleRender()
@@ -190,7 +190,7 @@ function checkLeases() {
   for (const [creator, p] of state.leases) {
     if (secondsLeft(p.expiresAt) <= 0) {
       state.leases.delete(creator)
-      feed(`${label(p)} lease expired, network dark`, p.key)
+      feed(`${label(p)} stopped reporting: its signal expired`, p.key)
     }
   }
 }
@@ -211,7 +211,9 @@ const esc = (s: unknown) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 const short = (h: string) => `${h.slice(0, 6)}…${h.slice(-4)}`
 const labTag = (lab: number) => (lab ? `<span class="lab">lab</span>` : "")
-const label = (p: { isp: string; asn: number; lab: number }) => `${esc(p.isp)} (AS${p.asn})${labTag(p.lab)}`
+// The ASN is the internet provider's registry number; shown small, after the provider's name.
+const label = (p: { isp: string; asn: number; lab: number }) =>
+  `${esc(p.isp)} <span class="muted small">AS${p.asn}</span>${labTag(p.lab)}`
 const ago = (ts: number) => {
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts))
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`
@@ -231,12 +233,20 @@ const verdictClass = (v: Verdict | AggregateVerdict | "dark") =>
     unknown: "v-unknown",
   })[v]
 const AGG_LABEL: Record<AggregateVerdict, string> = {
-  ok: "Reachable",
-  blocked: "Blocked",
-  down: "Down everywhere",
-  partial: "Unreachable on some networks",
-  slow: "Slow on one network",
-  unknown: "No live probes",
+  ok: "works",
+  blocked: "blocked",
+  down: "down everywhere",
+  partial: "fails on some",
+  slow: "slow on one",
+  unknown: "no live probes",
+}
+// What one probe saw, in plain words.
+const VERDICT_LABEL: Record<Verdict, string> = {
+  ok: "works",
+  dns_tampered: "blocked: fake address",
+  block_page: "blocked: block page",
+  unreachable: "can't connect",
+  http_error: "site error",
 }
 
 function visible<T extends { lab: number }>(xs: Iterable<T>): T[] {
@@ -262,6 +272,7 @@ function renderAll() {
   renderRegions(ps)
   renderGrid(ps)
   renderEvidence()
+  renderSummary(ps)
   $("head").textContent = state.head.block ? String(headNow()).padStart(8, "0") : "--------"
 }
 
@@ -269,7 +280,7 @@ function renderRegions(ps: ProbeInfo[]) {
   const regions = new Map<string, ProbeInfo[]>()
   for (const p of ps) regions.set(p.region, [...(regions.get(p.region) ?? []), p])
   const live = ps.filter((p) => p.lease).length
-  $("probe-count").textContent = `${live} live / ${ps.length} seen`
+  $("probe-count").textContent = ps.length ? `${live} of ${ps.length} reporting` : ""
   $("regions").innerHTML =
     [...regions]
       .map(([region, list]) => {
@@ -277,15 +288,15 @@ function renderRegions(ps: ProbeInfo[]) {
         const rows = list
           .map((p) => {
             const st = p.lease
-              ? `<span class="muted">lease ${Math.max(0, secondsLeft(p.lease.expiresAt))}s</span>`
-              : `<span class="pill v-dark">dark</span>`
+              ? `<span class="muted small">reporting · signal good for ${Math.max(0, secondsLeft(p.lease.expiresAt))}s</span>`
+              : `<span class="pill v-dark">silent</span>`
             return `<div class="probe"><span>${label(p)} <a class="mono" href="${EXPLORER}/address/${p.creator}" target="_blank" rel="noopener">${short(p.creator)}</a></span>${st}</div>`
           })
           .join("")
-        const badge = dark ? `<span class="pill v-dark">dark: possible shutdown</span>` : `<span class="pill v-ok">online</span>`
+        const badge = dark ? `<span class="pill v-dark">silent: possible shutdown</span>` : `<span class="pill v-ok">online</span>`
         return `<div class="region ${dark ? "dark" : ""}"><h3><span>${esc(region)}</span>${badge}</h3>${rows}</div>`
       })
-      .join("") || `<p class="nosignal">no probes have reported in the last 30 minutes</p>`
+      .join("") || `<p class="nosignal">No probes have reported in the last 30 minutes.</p>`
 }
 
 function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
@@ -303,13 +314,13 @@ function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
 function renderGrid(ps: ProbeInfo[]) {
   const latest = latestByTargetAndProbe()
   const grid = $("grid")
-  $("empty").textContent = latest.size ? "" : "no results yet, waiting for probes"
+  $("empty").textContent = latest.size ? "" : "No results yet. Probes report about once a minute."
   if (!latest.size) {
     grid.innerHTML = ""
     return
   }
-  const head = `<tr><th>Target</th><th>Verdict</th>${ps
-    .map((p) => `<th>${label(p)}<br><span class="muted small">${esc(p.region)}${p.lease ? "" : " · dark"}</span></th>`)
+  const head = `<tr><th>Website</th><th>Overall</th>${ps
+    .map((p) => `<th>${label(p)}<br><span class="muted small">${esc(p.region)}${p.lease ? "" : " · silent"}</span></th>`)
     .join("")}</tr>`
   const rows = [...latest.keys()].sort().map((target) => {
     const row = latest.get(target)!
@@ -330,7 +341,7 @@ function renderGrid(ps: ProbeInfo[]) {
       .map((p) => {
         const m = row.get(p.creator.toLowerCase())
         if (!m) return `<td class="muted">–</td>`
-        return `<td class="cell ${p.lease ? "" : "stale"}" data-key="${m.key}"><span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span><br><span class="muted small">${m.latencyMs} ms · ${ago(m.ts)}</span></td>`
+        return `<td class="cell ${p.lease ? "" : "stale"}" data-key="${m.key}"><span class="pill ${verdictClass(m.verdict)}">${VERDICT_LABEL[m.verdict]}</span><br><span class="muted small">${m.latencyMs} ms · ${ago(m.ts)}</span></td>`
       })
       .join("")
     return `<tr><td class="target">${esc(target)}</td><td><span class="pill ${verdictClass(agg)}">${AGG_LABEL[agg]}</span>${where}</td>${cells}</tr>`
@@ -341,17 +352,17 @@ function renderGrid(ps: ProbeInfo[]) {
 function renderEvidence() {
   const list = visible(state.evidence.values()).sort((a, b) => b.ts - a.ts)
   $("evidence").innerHTML = list.length
-    ? `<tr><th>When</th><th>Target</th><th>Network</th><th>Region</th><th>Result</th><th>Kept until</th><th>Entity</th></tr>` +
+    ? `<tr><th>When</th><th>Website</th><th>Internet provider</th><th>Region</th><th>What happened</th><th>Kept for</th><th>Record</th></tr>` +
       list
         .map((m) => {
           const left = secondsLeft(m.expiresAt)
           const naturalLeft = MEASUREMENT_SECONDS - (Date.now() / 1000 - m.ts)
           const corroborated = left > naturalLeft + 3600
-          const keep = left > 0 ? `${Math.round(left / 3600)}h${corroborated ? ` <span class="pill v-ok">corroborated</span>` : ""}` : "expired"
-          return `<tr><td>${new Date(m.ts * 1000).toLocaleString()}</td><td class="target">${esc(m.target)}</td><td>${label(m)}</td><td>${esc(m.region)}</td><td><span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span></td><td>${keep}</td><td class="cell" data-key="${m.key}"><span class="mono">${short(m.key)}</span></td></tr>`
+          const keep = left > 0 ? `${Math.round(left / 3600)} more hours${corroborated ? ` <span class="pill v-ok">confirmed by another provider</span>` : ""}` : "expired"
+          return `<tr><td>${new Date(m.ts * 1000).toLocaleString()}</td><td class="target">${esc(m.target)}</td><td>${label(m)}</td><td>${esc(m.region)}</td><td><span class="pill ${verdictClass(m.verdict)}">${VERDICT_LABEL[m.verdict]}</span></td><td>${keep}</td><td class="cell" data-key="${m.key}"><span class="mono">${short(m.key)}</span></td></tr>`
         })
         .join("")
-    : `<tr><td class="muted">no interference recorded</td></tr>`
+    : `<tr><td class="muted">No blocking recorded yet.</td></tr>`
 }
 
 function feed(html: string, key?: Hex) {
@@ -377,16 +388,17 @@ async function showDetail(key: Hex) {
   }
   const flags = e.creationFlags
   body.innerHTML = `
-    <h2>${esc(a.target ?? a.kind)} · <span class="pill ${verdictClass(a.verdict)}">${esc(a.verdict ?? "")}</span></h2>
+    <h2>${esc(a.target ?? a.kind)} · <span class="pill ${verdictClass(a.verdict)}">${esc(VERDICT_LABEL[a.verdict as Verdict] ?? a.verdict ?? "")}</span></h2>
+    <p class="hint">This is the raw record as stored on Arkiv. Anyone can look it up with the links below.</p>
     <dl>
-      <dt>Entity</dt><dd><a class="mono" href="${EXPLORER}/entity/${key}" target="_blank" rel="noopener">${key}</a></dd>
-      <dt>Creator</dt><dd><a class="mono" href="${EXPLORER}/address/${e.creator}" target="_blank" rel="noopener">${e.creator}</a> <span class="muted">(immutable: the probe that measured it)</span></dd>
-      <dt>Network</dt><dd>${label(a as any)} · ${esc(a.region)}</dd>
-      <dt>Measured</dt><dd>${new Date(a.ts * 1000).toLocaleString()} · ${a.latencyMs} ms</dd>
-      <dt>Expires</dt><dd>block ${e.expiresAt} (~${Math.round(secondsLeft(e.expiresAt ?? 0n) / 3600)}h from now)</dd>
-      <dt>Flags</dt><dd>${flags?.readonly ? "read-only (cannot be edited, even by its creator)" : "editable"} · ${flags?.permissionlessExtension ? "anyone can extend its life" : "owner-only extension"}</dd>
+      <dt>Record ID</dt><dd><a class="mono" href="${EXPLORER}/entity/${key}" target="_blank" rel="noopener">${key}</a></dd>
+      <dt>Written by</dt><dd><a class="mono" href="${EXPLORER}/address/${e.creator}" target="_blank" rel="noopener">${e.creator}</a> <span class="muted">(the probe's wallet; this can never change)</span></dd>
+      <dt>Internet provider</dt><dd>${label(a as any)} · ${esc(a.region)}</dd>
+      <dt>Checked at</dt><dd>${new Date(a.ts * 1000).toLocaleString()} · ${a.latencyMs} ms</dd>
+      <dt>Deleted after</dt><dd>about ${Math.round(secondsLeft(e.expiresAt ?? 0n) / 3600)} more hours (block ${e.expiresAt})</dd>
+      <dt>Rules</dt><dd>${flags?.readonly ? "locked: nobody can edit it, not even the probe that wrote it" : "can be edited by its owner"} · ${flags?.permissionlessExtension ? "anyone can keep it for longer" : "only its owner can keep it for longer"}</dd>
     </dl>
-    <h3>Evidence (payload)</h3>
+    <h3>What the probe saw (DNS answers and web response)</h3>
     <pre><code>${esc(payload)}</code></pre>`
 }
 
@@ -464,4 +476,35 @@ function showError(err: unknown) {
 
 function hideBanner() {
   $("banner").hidden = true
+}
+
+// One plain sentence at the top of the page.
+function renderSummary(ps: ProbeInfo[]) {
+  const latest = latestByTargetAndProbe()
+  if (!latest.size) {
+    $("summary").innerHTML = ps.length
+      ? `<b>Waiting for results.</b> Probes are online and report about once a minute.`
+      : `<b>No results yet.</b> No probes have reported in the last 30 minutes.`
+    return
+  }
+  const counts: Record<AggregateVerdict, number> = { ok: 0, blocked: 0, down: 0, partial: 0, slow: 0, unknown: 0 }
+  for (const row of latest.values()) {
+    const obs = ps
+      .filter((p) => p.lease && row.has(p.creator.toLowerCase()))
+      .map((p) => row.get(p.creator.toLowerCase())!)
+      .map((m) => ({ probe: m.creator, verdict: m.verdict, latencyMs: m.latencyMs, ts: m.ts }))
+    counts[aggregate(obs)]++
+  }
+  const live = ps.filter((p) => p.lease).length
+  const regions = new Map<string, boolean>()
+  for (const p of ps) regions.set(p.region, (regions.get(p.region) ?? false) || !!p.lease)
+  const silent = [...regions.values()].filter((on) => !on).length
+  const parts = [
+    `<span class="pill v-blocked">${counts.blocked} blocked</span>`,
+    `<span class="pill v-down">${counts.down} down everywhere</span>`,
+    `<span class="pill v-ok">${counts.ok + counts.slow} working</span>`,
+  ]
+  if (counts.partial) parts.push(`<span class="pill v-partial">${counts.partial} failing on some</span>`)
+  if (silent) parts.push(`<span class="pill v-dark">${silent} region${silent > 1 ? "s" : ""} silent</span>`)
+  $("summary").innerHTML = `<b>${latest.size} websites checked from ${live} internet provider${live === 1 ? "" : "s"} in the last 30 minutes.</b><br>${parts.join(" ")}`
 }

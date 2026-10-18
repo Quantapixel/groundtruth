@@ -8,95 +8,106 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div class="scan" aria-hidden="true"></div>
-
     <header>
-      <pre class="ascii" aria-hidden="true">
-  ________                               .______________             __  .__
- /  _____/______  ____  __ __  ____    __| _/\__    ___/______ __ ___/  |_|  |__
-/   \  __\_  __ \/  _ \|  |  \/    \  / __ |   |    |  \_  __ \  |  \   __\  |  \
-\    \_\  \  | \(  &lt;_&gt; )  |  /   |  \/ /_/ |   |    |   |  | \/  |  /|  | |   Y  \
- \______  /__|   \____/|____/|___|  /\____ |   |____|   |__|  |____/ |__| |___|  /
-        \/                        \/      \/                                   \/</pre>
-      <h1 class="title-plain">GROUNDTRUTH</h1>
-      <p class="tagline">is it down, blocked, or switched off?<span class="cursor">_</span></p>
+      <div class="masthead">
+        <h1 class="title-plain">groundtruth</h1>
+        <p class="tagline">Is that website down, blocked, or has the internet been switched off?</p>
+      </div>
       <p class="meta">
         <span id="ws-status" class="pill">connecting</span>
-        <span>block <span id="head">--------</span></span>
-        <span>tiramisu testnet</span>
+        <span>Arkiv block <span id="head">--------</span></span>
+        <span>Tiramisu test network</span>
       </p>
       <nav>
-        <a href="#networks">networks</a> |
-        <a href="#now">right now</a> |
-        <a href="#evidence-win">evidence</a> |
-        <a href="#feed-win">feed</a> |
-        <a href="#verify">verify</a> |
-        <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">source</a>
+        <a href="#networks">Networks</a> |
+        <a href="#now">Right now</a> |
+        <a href="#evidence-win">Evidence</a> |
+        <a href="#feed-win">Live feed</a> |
+        <a href="#verify">Check it yourself</a> |
+        <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">Source code</a>
       </nav>
     </header>
 
     <main>
       <div id="banner" class="banner" role="alert" hidden></div>
 
+      <p id="summary" class="summary">Loading results…</p>
+
       <section class="box">
-        <h2>about</h2>
+        <h2>What is this?</h2>
         <p>
-          Probes on different networks test the same sites and publish every result to
-          <a href="https://arkiv.network" target="_blank" rel="noopener">Arkiv</a>, the Web3 database.
-          This page has no backend. Your browser reads the chain directly, so taking this site down
-          does not take the data down. <a href="#verify">Check it yourself.</a>
+          When a website won't open in India, you usually can't tell why. The site might be down,
+          your internet provider might be blocking it on a government order, or the internet in your area
+          might have been shut off. Groundtruth tells these apart.
         </p>
-        <label class="toggle"><input type="checkbox" id="show-lab" checked /> show lab probes (simulated ISPs, documentation-range ASNs)</label>
+        <p>
+          Small programs called <b>probes</b> run on different internet providers and try the same list of websites
+          every minute. Each result is saved to <a href="https://arkiv.network" target="_blank" rel="noopener">Arkiv</a>,
+          a public database that nobody can edit or delete from, not even us. This page reads those results straight
+          from Arkiv. There is no Groundtruth server, so blocking this website does not hide the results.
+        </p>
+        <label class="toggle"><input type="checkbox" id="show-lab" checked /> Include lab probes (test networks we simulate for demos, not real internet providers)</label>
+      </section>
+
+      <section class="box key">
+        <h2>How to read the results</h2>
+        <dl class="legend-list">
+          <dt><span class="pill v-ok">works</span></dt>
+          <dd>The website opened normally on every network.</dd>
+          <dt><span class="pill v-blocked">blocked</span></dt>
+          <dd>At least one internet provider is interfering: it gave a fake address for the site, or showed a "this site has been blocked" page. Other providers can still reach it.</dd>
+          <dt><span class="pill v-down">down everywhere</span></dt>
+          <dd>No network can reach it. The website itself is probably having an outage.</dd>
+          <dt><span class="pill v-partial">fails on some</span></dt>
+          <dd>Some providers can't connect while others can, but there is no clear sign of blocking.</dd>
+          <dt><span class="pill v-slow">slow on one</span></dt>
+          <dd>It works everywhere, but one provider is much slower than the rest.</dd>
+          <dt><span class="pill v-dark">silent</span></dt>
+          <dd>All the probes in a region stopped reporting at once. That can mean the internet there was switched off.</dd>
+        </dl>
       </section>
 
       <section class="box" id="networks">
-        <h2>networks <span id="probe-count" class="muted"></span></h2>
-        <p class="hint">Each probe holds a heartbeat lease on Arkiv and renews it every round. If every probe in a region stops reporting, the leases expire and the region is marked dark: a possible shutdown.</p>
+        <h2>Networks <span id="probe-count" class="muted"></span></h2>
+        <p class="hint">Every probe sends a "still here" signal to Arkiv with each round of results. The signal expires after 3 minutes unless it is renewed. If every probe in a region goes quiet, the region is marked silent.</p>
         <div id="regions" class="regions"></div>
       </section>
 
       <section class="box" id="now">
-        <h2>right now <span class="muted">last 30 min</span></h2>
-        <p class="legend">
-          <span class="pill v-ok">reachable</span>
-          <span class="pill v-blocked">blocked</span>
-          <span class="pill v-down">down everywhere</span>
-          <span class="pill v-partial">unreachable on some</span>
-          <span class="pill v-slow">slow on one</span>
-          <span class="pill v-dark">dark</span>
-        </p>
+        <h2>Right now <span class="muted">results from the last 30 minutes</span></h2>
+        <p class="hint">Each row is a website. Each column is an internet provider. Click any result to see the raw record on Arkiv.</p>
         <div class="table-wrap"><table id="grid"></table></div>
         <p id="empty" class="nosignal"></p>
       </section>
 
       <section class="box" id="evidence-win">
-        <h2>evidence <span class="muted">up to 7 days</span></h2>
-        <p class="hint">Every DNS tampering or block page result. Entries are read-only, so nobody can edit them, including the probe that wrote them. When a probe on another network sees the same block, it extends the entry from 48 hours to 7 days.</p>
+        <h2>Evidence of blocking <span class="muted">kept for up to 7 days</span></h2>
+        <p class="hint">Every time a probe caught a provider blocking a site. These records are locked, so nobody can change them later, including the probe that wrote them. Normally they expire after 48 hours. If a probe on a different provider sees the same block, it extends the record to 7 days.</p>
         <div class="table-wrap"><table id="evidence"></table></div>
       </section>
 
       <section class="box" id="feed-win">
-        <h2>feed</h2>
+        <h2>Live feed</h2>
+        <p class="hint">New results appear here as they are saved to Arkiv, without reloading the page.</p>
         <ol id="feed" class="feed"></ol>
-        <p class="prompt">$ <span class="cursor">_</span></p>
       </section>
 
       <section class="box" id="verify">
-        <h2>verify without us</h2>
-        <p>Read the same data from the Tiramisu RPC. No Groundtruth server, account or API key:</p>
+        <h2>Check it yourself</h2>
+        <p>You don't have to trust this page. Anyone can ask Arkiv for the same data directly. Paste this into a terminal:</p>
         <pre><code id="curl"></code></pre>
-        <p>Or with the Arkiv SDK:</p>
+        <p>Or, for developers, with the Arkiv SDK:</p>
         <pre><code id="sdk"></code></pre>
-        <p class="hint">Data contract: <a href="https://github.com/Quantapixel/groundtruth/blob/main/arkiv/schema.md" target="_blank" rel="noopener">arkiv/schema.md</a></p>
+        <p class="hint">What every field means: <a href="https://github.com/Quantapixel/groundtruth/blob/main/arkiv/schema.md" target="_blank" rel="noopener">arkiv/schema.md</a></p>
       </section>
     </main>
 
     <footer>
-      <p>groundtruth · MIT · <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">github.com/Quantapixel/groundtruth</a></p>
+      <p>Groundtruth · open source (MIT) · <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">github.com/Quantapixel/groundtruth</a></p>
     </footer>
 
     <dialog id="detail">
-      <form method="dialog"><button class="close" aria-label="Close">[x]</button></form>
+      <form method="dialog"><button class="close" aria-label="Close">close</button></form>
       <div id="detail-body"></div>
     </dialog>
 
