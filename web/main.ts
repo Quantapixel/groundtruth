@@ -44,6 +44,9 @@ const state = {
   leases: new Map<string, Probe>(), // by creator (lowercase)
   head: { block: 0n, at: 0 },
   showLab: true,
+  // Wall-clock time of the last moment we know our view of the chain was current. A lease is only
+  // declared lapsed after a sync that happened past its expiry, so stale data never fakes a shutdown.
+  syncedAt: 0,
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -95,12 +98,14 @@ async function loadAll() {
   state.measurements = new Map(current.map((e) => [e.key!, toMeasurement(e)]))
   state.evidence = new Map(evidence.map((e) => [e.key!, toMeasurement(e)]))
   state.leases = new Map(probes.map((e) => [e.creator!.toLowerCase(), toProbe(e)]))
+  state.syncedAt = Date.now()
   hideBanner()
   renderAll()
 }
 
 // Only what changed since the newest result we hold: a few entities instead of the whole window.
 async function loadIncrement() {
+  const started = Date.now()
   let maxTs = 0
   for (const m of state.measurements.values()) maxTs = Math.max(maxTs, m.ts)
   const since = maxTs || Math.floor(Date.now() / 1000) - WINDOW_SECONDS
@@ -118,6 +123,7 @@ async function loadIncrement() {
     if (!state.leases.has(c)) feed(`${label(p)} came online`, p.key)
     state.leases.set(c, p)
   }
+  state.syncedAt = started
   hideBanner()
   scheduleRender()
 }
@@ -148,6 +154,11 @@ function secondsLeft(expiresAt: bigint): number {
   return Number(expiresAt - headNow()) * BLOCK_TIME
 }
 
+// Wall-clock time at which a block is (or was) produced, from the last synced head.
+function blockTime(block: bigint): number {
+  return state.head.at + Number(block - state.head.block) * BLOCK_TIME * 1000
+}
+
 // ---------- live updates ----------
 
 function watch() {
@@ -176,22 +187,38 @@ function watch() {
       scheduleRender()
     },
     onError: (err) => {
-      status.textContent = "live feed error"
+      status.textContent = "live feed error, polling"
       status.className = "pill err"
       console.error(err)
+      startPolling()
     },
   })
   status.textContent = "live"
   status.className = "pill live"
 }
 
-// Arkiv emits no event when an entity expires, so lease lapses are detected on a timer.
+// Without the WebSocket feed (for example when the IP's query budget is used up), poll instead.
+let pollTimer: ReturnType<typeof setInterval> | undefined
+function startPolling() {
+  pollTimer ??= setInterval(() => loadIncrement().catch(showError), 30_000)
+}
+
+// Arkiv emits no event when an entity expires, so lease lapses are detected on a timer. A lease
+// whose expiry has passed is only dropped once a sync after that moment confirms it was not
+// renewed; until then the probe shows as overdue and one query re-checks it.
+let lastConfirm = 0
 function checkLeases() {
+  let overdue = false
   for (const [creator, p] of state.leases) {
-    if (secondsLeft(p.expiresAt) <= 0) {
+    if (secondsLeft(p.expiresAt) > 0) continue
+    if (state.syncedAt > blockTime(p.expiresAt)) {
       state.leases.delete(creator)
       feed(`${label(p)} stopped reporting: its signal expired`, p.key)
-    }
+    } else overdue = true
+  }
+  if (overdue && Date.now() - lastConfirm > 15_000) {
+    lastConfirm = Date.now()
+    loadIncrement().catch(showError)
   }
 }
 
@@ -287,8 +314,9 @@ function renderRegions(ps: ProbeInfo[]) {
         const dark = list.every((p) => !p.lease)
         const rows = list
           .map((p) => {
+            const left = p.lease ? secondsLeft(p.lease.expiresAt) : 0
             const st = p.lease
-              ? `<span class="muted small">reporting · signal good for ${Math.max(0, secondsLeft(p.lease.expiresAt))}s</span>`
+              ? `<span class="muted small">${left > 0 ? `reporting · signal good for ${left}s` : "signal overdue · checking Arkiv"}</span>`
               : `<span class="pill v-dark">silent</span>`
             return `<div class="probe"><span>${label(p)} <a class="mono" href="${EXPLORER}/address/${p.creator}" target="_blank" rel="noopener">${short(p.creator)}</a></span>${st}</div>`
           })

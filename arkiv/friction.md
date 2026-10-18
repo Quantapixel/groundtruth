@@ -22,7 +22,7 @@ Each entry says whether we **reproduced** it ourselves or **inferred** it from t
 - **Surface:** `watchEntityEvents` (SDK 0.8.1), `EntityEvent` union in `src/types/events.ts`
 - **Expected:** An `EntityExpired` event, or a documented way to be notified when an entity's lifetime ends. Groundtruth's shutdown detection *is* a lease expiring.
 - **Actual:** The union is `EntityCreated | EntityPatched | ExpiryExtended | OwnershipTransferred | EntityDeleted`. Expiry is silent.
-- **Workaround:** The dashboard tracks each lease's `expiresAt` block, estimates the head block from a 2-second block time, and checks every 5 seconds (`checkLeases()` in `web/main.ts`). It also re-queries every 60 seconds, so a missed estimate self-corrects.
+- **Workaround:** The dashboard tracks each lease's `expiresAt` block, estimates the head block from a 2-second block time, and checks every 5 seconds (`checkLeases()` in `web/main.ts`). A lease past its expiry is only dropped after a successful query made *after* that moment confirms it was not renewed; until then the probe shows "overdue". Without that check, a dashboard whose feed had silently died marked every region dark (entry 13).
 - **Suggested fix:** Emit an `EntityExpired` log when the engine prunes an entity, or document how to watch for it. Even an event batched at block boundaries would let apps drop their timers.
 
 ## 3. `ExpiryExtended` does not say who extended (inferred from SDK types)
@@ -108,6 +108,16 @@ Each entry says whether we **reproduced** it ourselves or **inferred** it from t
 - **Actual:** the transaction is sent and fails with `Transaction failed: an attribute name holds "M" (0x4d) at byte 7, which is outside the name charset ("A"-"Z", "a"-"z", "0"-"9", ".", "-" and "_", with a letter first)`. The message lists `"A"-"Z"` as allowed while rejecting `M`.
 - **Workaround:** renamed to `latency_ms` and `started_at`. The first real round then landed in tx `0x0af5a973aa40dc161c295148929f5c183611fcd2be5ca970079c8371cd3074af`.
 - **Suggested fix:** validate names client-side in the SDK (it already validates creation flags), and make the error's charset match the rule the chain enforces.
+
+## 13. The WebSocket feed can fail in the browser with no way to tell why (reproduced, high impact)
+
+- **Surface:** `wss://rpc.tiramisu.db-chain.testnet.arkiv.network`, `watchEntityEvents` over viem's `webSocket()` transport, headless Chrome
+- **Steps:** during a recorded lab run, the dashboard's `watchEntityEvents` called `onError` right after load, while HTTP queries from the same page still succeeded. No further events arrived, although the probes kept writing on-chain. Afterwards, with the IP's query budget exhausted (entry 11), we sent three WebSocket upgrades from the same IP: two got `101 Switching Protocols`, one got `HTTP/1.1 429 Too Many Requests`.
+- **Expected:** event subscriptions that stay up, or a documented limit and a typed close reason. They cost the node no `arkiv_query`, and for a read-only dashboard they are the cheap path.
+- **Actual:** an untyped error and silence. We could not tell whether it was the anonymous budget, a connection-rate limit or something else.
+- **Impact:** the dashboard kept counting down lease clocks on stale data and declared every region "silent: possible shutdown" while all probes were reporting: a false shutdown, the worst possible error for this app.
+- **What we changed:** on `onError` the dashboard falls back to polling one incremental query every 30 seconds, and a lease is only treated as lapsed after a query made after its expiry confirms it (entry 2).
+- **Suggested fix:** document WebSocket limits and whether they share the query budget; send a close frame with a reason (for example `RATE_LIMITED`, retry-after) instead of a bare 429 on upgrade; have the SDK resubscribe after reconnecting.
 
 ---
 
