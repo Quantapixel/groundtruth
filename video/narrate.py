@@ -74,6 +74,39 @@ def drone(n: int) -> np.ndarray:
     return bed * fade
 
 
+# Terminal scenes print this many lines on a fixed schedule; record.mjs uses the same numbers.
+TERM_LINES = 14
+
+
+def sweep(f0: float, f1: float, dur: float, vol: float) -> np.ndarray:
+    n = int(dur * SR)
+    f = np.geomspace(f0, f1, n)
+    phase = 2 * np.pi * np.cumsum(f) / SR
+    env = np.minimum(1, np.linspace(0, 8, n)) * np.linspace(1, 0, n) ** 1.5
+    return np.sin(phase) * env * vol
+
+
+def beep(freq: float = 880.0, dur: float = 0.07, vol: float = 0.08) -> np.ndarray:
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    return np.sign(np.sin(2 * np.pi * freq * t)) * np.exp(-t * 40) * vol
+
+
+def click(vol: float = 0.07) -> np.ndarray:
+    n = int(0.012 * SR)
+    rng = np.random.default_rng()
+    return rng.uniform(-1, 1, n) * np.exp(-np.arange(n) / (0.002 * SR)) * vol
+
+
+def lab_line_times(scene: dict) -> list[float]:
+    span = scene["sents"][-1]["end"] - 0.5
+    return [scene["start"] + 0.3 + span * i / TERM_LINES for i in range(TERM_LINES)]
+
+
+def verify_line_times(scene: dict) -> list[float]:
+    return [scene["start"] + 0.2 + i * 0.22 for i in range(TERM_LINES)]
+
+
 def static_burst(n: int) -> np.ndarray:
     rng = np.random.default_rng(n)
     env = np.sin(np.linspace(0, np.pi, n)) ** 0.5
@@ -121,6 +154,21 @@ def main() -> None:
         if it["type"] == "cut":
             i, m = int(it["start"] * SR), int(it["dur"] * SR)
             mix[i : i + m] += static_burst(m)
+
+    def add(at: float, sound: np.ndarray) -> None:
+        i = int(at * SR)
+        mix[i : i + len(sound)] += sound[: max(0, len(mix) - i)]
+
+    scenes = {it["id"]: it for it in items if it["type"] == "scene"}
+    add(0.0, sweep(70, 1400, 0.45, 0.16))  # CRT power-on
+    prob = scenes["problem"]
+    for t in (prob["sents"][0]["start"], prob["sents"][0]["start"] + 1.6, prob["sents"][1]["start"], prob["sents"][2]["start"]):
+        add(prob["start"] + t, beep())
+    for t in lab_line_times(scenes["lab"]) + verify_line_times(scenes["verify"]):
+        for k in range(3):
+            add(t + k * 0.035, click())
+    end = scenes["end"]
+    add(end["start"] + end["dur"] - 0.75, sweep(1200, 50, 0.6, 0.14))  # power-off
     mix = np.clip(mix, -0.99, 0.99)[: int(total * SR)]
 
     sf.write(out_dir / "audio.wav", mix.astype(np.float32), SR)

@@ -18,6 +18,7 @@ const FRAMES = path.join(OUT, "frames")
 const DRY = process.argv.includes("--dry")
 const VIEW = { width: 1120, height: 630, deviceScaleFactor: 1920 / 1120 }
 const DASH = "http://localhost:4173/"
+const TERM_LINES = 14 // must match narrate.py, which places a typing click under each line
 const EXPLORER = "https://tiramisu.explorer.arkiv.network"
 const RPC = "https://rpc.tiramisu.db-chain.testnet.arkiv.network"
 const STAGE = `file://${path.join(ROOT, "video/stage.html")}`
@@ -133,6 +134,9 @@ async function crt(bezel) {
       #__crt .scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px); animation: __flick 4s infinite; }
       #__crt .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 58%, rgb(0 0 0 / 0.7) 100%); }
       #__crt .bez { position: absolute; inset: 16px; border-radius: 26px; box-shadow: 0 0 0 40px #030403, inset 0 0 70px rgb(0 0 0 / 0.75), inset 0 0 0 2px rgb(120 255 120 / 0.10); }
+      #__crt .chap { position: absolute; top: 30px; left: 46px; padding: 3px 10px; background: rgb(3 4 3 / 0.85); font: bold 20px "Liberation Mono", monospace; color: #ffc35a; letter-spacing: 0.1em; text-shadow: 0 0 6px rgb(255 180 60 / 0.6); }
+      .__hl { outline: 3px solid #ffc35a !important; outline-offset: 2px; animation: __hlp 1.1s ease-in-out infinite; }
+      @keyframes __hlp { 50% { outline-color: rgb(255 195 90 / 0.2); } }
       #__crt .tag { position: absolute; top: 30px; right: 44px; padding: 4px 12px; font: bold 22px "Liberation Mono", monospace; color: #050806; background: #ffc35a; letter-spacing: 0.08em; }
       @keyframes __flick { 0%, 100% { opacity: 1 } 47% { opacity: 0.92 } 48% { opacity: 1 } 73% { opacity: 0.95 } }
     \`
@@ -148,6 +152,31 @@ async function crt(bezel) {
 async function badge(text) {
   await evaluate(`(() => { const c = document.getElementById("__crt"); c?.querySelector(".tag")?.remove(); if (${JSON.stringify(text)}) c?.insertAdjacentHTML("beforeend", '<div class="tag">' + ${JSON.stringify(text)} + '</div>') })()`)
 }
+let chapterText = ""
+async function chapter(text) {
+  if (text !== undefined) chapterText = text
+  await evaluate(`(() => { const c = document.getElementById("__crt"); c?.querySelector(".chap")?.remove(); if (${JSON.stringify(chapterText)}) c?.insertAdjacentHTML("beforeend", '<div class="chap">' + ${JSON.stringify(chapterText)} + '</div>') })()`)
+}
+
+// Camera push-in on one element, with a pulsing outline.
+async function focus(selector, match, scale = 1.4) {
+  await evaluate(`(() => {
+    const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => !${JSON.stringify(match ?? "")} || e.textContent.includes(${JSON.stringify(match ?? "")}))
+    if (!el) return
+    document.querySelectorAll(".__hl").forEach((e) => e.classList.remove("__hl"))
+    el.classList.add("__hl")
+    el.scrollIntoView({ block: "center" })
+    const r = el.getBoundingClientRect()
+    const b = document.body
+    b.style.transition = "transform 1.3s cubic-bezier(.2,.7,.2,1)"
+    b.style.transformOrigin = (r.left + r.width / 2 + scrollX) + "px " + (r.top + r.height / 2 + scrollY) + "px"
+    b.style.transform = "scale(${scale})"
+  })()`)
+}
+async function unfocus() {
+  await evaluate(`(() => { document.body.style.transition = "none"; document.body.style.transform = "none"; document.querySelectorAll(".__hl").forEach((e) => e.classList.remove("__hl")) })()`)
+}
+
 async function staticNoise(on) {
   await evaluate(on
     ? `(() => {
@@ -164,6 +193,7 @@ async function go(url, settleMs, bezel) {
   await send("Page.navigate", { url })
   await sleep(settleMs)
   await crt(bezel)
+  await chapter()
 }
 async function scrollTo(selector, offset = 24) {
   await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.scrollIntoView({ block: "start" }); window.scrollBy(0, -${offset}) } })()`)
@@ -234,11 +264,15 @@ let blockedKey
 const SCENES = {
   async title(s) {
     await go(STAGE, 1500, false)
+    await chapter("")
     await evaluate(`show(${JSON.stringify(`<div class="title"><h1 class="glow" data-text="GROUNDTRUTH">GROUNDTRUTH</h1><p class="amber">down &middot; blocked &middot; switched off<span class="cursor">_</span></p><div class="rule"></div></div>`)})`)
-    await film(s.dur)
+    await film(s.dur, async () => {
+      await evaluate(`document.body.classList.add("on")`)
+    })
   },
 
   async problem(s) {
+    chapterText = "00 // THE PROBLEM"
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="story glow">
       <p class="line"><span class="prompt">&gt;</span>site <span class="amber">down</span>?</p>
@@ -258,29 +292,32 @@ const SCENES = {
       log("waiting for round 1 from all three probes")
       await waitFor(() => ["probe-a", "probe-b", "probe-c"].every((p) => labLines.some((l) => l.startsWith(`[${p}]`) && /round 1 /.test(l))), 240_000, "round 1")
     }
-    const lines = labLines.filter((l) => /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, 16)
+    const lines = labLines.filter((l) => /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, TERM_LINES)
+    chapterText = "01 // THE LAB"
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; npm run lab</div><pre id="t"></pre></div>`)})`)
-    const shown = lines.length ? lines : ["(dry run: no lab output)"]
+    const shown = (lines.length ? lines : ["(dry run: no lab output)"]).concat(Array(TERM_LINES).fill("")).slice(0, TERM_LINES)
     await film(s.dur, async (at) => {
       const span = s.sents.at(-1).end - 0.5
       for (let i = 0; i < shown.length; i++) {
-        await at(0.3 + (span * i) / shown.length)
+        await at(0.3 + (span * i) / TERM_LINES)
         await evaluate(`termLine(${JSON.stringify(colour(shown[i]))})`)
       }
     })
   },
 
   async dash(s) {
+    chapterText = "02 // THE DASHBOARD"
     await go(DASH, 7000, true)
     await scrollTo(".page", 0)
     await film(s.dur, async (at) => {
       await at(s.sents[1].start - 0.3)
-      await scrollTo("#now")
+      await focus("#grid tr", "torproject.org", 1.35)
     })
   },
 
   async detail(s) {
+    await unfocus()
     blockedKey = await evaluate(`(() => { const td = [...document.querySelectorAll("#grid td.cell")].find((t) => /blocked/.test(t.textContent)); if (td) { td.click(); return td.dataset.key } })()`)
     await sleep(2500)
     await film(s.dur)
@@ -295,8 +332,13 @@ const SCENES = {
       await waitFor(() => countLines(/lab-site:unreachable/) >= before + 3, 180_000, "lab-site unreachable everywhere")
       await sleep(6000)
     }
+    await unfocus()
+    await chapter("03 // OUTAGE")
     await scrollTo("#now")
-    await film(s.dur)
+    await film(s.dur, async (at) => {
+      await at(0.3)
+      await focus("#grid tr", "lab-site", 1.35)
+    })
   },
 
   async shutdown_a(s) {
@@ -304,6 +346,8 @@ const SCENES = {
       log("stopping probe C")
       lab.stdin.write("c")
     }
+    await unfocus()
+    await chapter("04 // SHUTDOWN")
     await scrollTo("#networks")
     await badge("&#9654;&#9654; TIME-LAPSE")
     if (DRY) await film(s.dur)
@@ -312,12 +356,20 @@ const SCENES = {
   },
 
   async shutdown_b(s) {
-    await film(s.dur)
+    await film(s.dur, async (at) => {
+      await at(0.2)
+      await focus(".region.dark", "", 1.5)
+    })
   },
 
   async evidence(s) {
+    await unfocus()
+    await chapter("05 // EVIDENCE")
     await scrollTo("#evidence-win")
-    await film(s.dur)
+    await film(s.dur, async (at) => {
+      await at(s.sents[0].start + 0.6)
+      await focus("#evidence tr:nth-child(2)", "", 1.3)
+    })
   },
 
   async verify(s) {
@@ -336,9 +388,10 @@ const SCENES = {
     } catch (e) {
       out = [String(e)]
     }
+    chapterText = "06 // VERIFY"
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; anyone, anywhere. no groundtruth server.</div><pre id="t"></pre></div>`)})`)
-    const lines = [`$ curl -s ${RPC} \\`, `   -d '{"method":"arkiv_query","params":["${query}"]}'`, ...out]
+    const lines = [`$ curl -s ${RPC} \\`, `   -d '{"method":"arkiv_query","params":["${query}"]}'`, ...out].slice(0, TERM_LINES)
     await film(s.dur, async (at) => {
       for (let i = 0; i < lines.length; i++) {
         await at(0.2 + i * 0.22)
@@ -353,12 +406,16 @@ const SCENES = {
   },
 
   async end(s) {
+    chapterText = ""
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="end glow"><h1 data-text="GROUNDTRUTH">GROUNDTRUTH</h1>
       <p class="amber">quantapixel.github.io/groundtruth</p>
       <p>github.com/Quantapixel/groundtruth &middot; MIT</p>
       <p class="dim">built on Arkiv &middot; npm run probe<span class="cursor">_</span></p></div>`)})`)
-    await film(s.dur)
+    await film(s.dur, async (at) => {
+      await at(s.dur - 0.75)
+      await evaluate(`document.body.classList.add("off")`)
+    })
   },
 }
 
@@ -408,7 +465,7 @@ const mp4 = path.join(OUT, DRY ? "groundtruth-demo-DRY.mp4" : "groundtruth-demo.
 execSync(
   `ffmpeg -y -loglevel error -f concat -safe 0 -i "${path.join(OUT, "frames.txt")}" -i "${path.join(NARR, "audio.wav")}" ` +
     `-vf "fps=30,scale=1920:1080:flags=lanczos,noise=alls=6:allf=t,ass='${path.join(OUT, "subs.ass")}',format=yuv420p" ` +
-    `-c:v libopenh264 -b:v 9M -c:a aac -b:a 192k -shortest "${mp4}"`,
+    `-af "loudnorm=I=-14:TP=-1.5:LRA=11" -c:v libopenh264 -b:v 9M -c:a aac -b:a 192k -ar 48000 -shortest "${mp4}"`,
   { stdio: "inherit" },
 )
 fs.rmSync(path.join(OUT, "chrome-profile"), { recursive: true, force: true })

@@ -73,6 +73,13 @@
       .end h1 { margin: 0 0 10px; font-size: 120px; letter-spacing: 0.06em; }
       .end p { margin: 8px 0; }
 
+      /* CRT power on / off */
+      body.on #stage { animation: poweron 0.7s ease-out both; }
+      body.off #stage { animation: poweroff 0.6s ease-in forwards; }
+      body.on::after, body.off::after { content: ""; position: fixed; inset: 0; pointer-events: none; background: #eaffea; animation: flash 0.7s ease-out forwards; }
+      @keyframes poweron { 0% { transform: scale(1.2, 0.004); filter: brightness(6); } 45% { transform: scale(1, 0.01); filter: brightness(4); } 100% { transform: none; filter: none; } }
+      @keyframes poweroff { 0% { transform: none; } 55% { transform: scale(1, 0.006); filter: brightness(5); } 100% { transform: scale(0, 0.006); filter: brightness(8); opacity: 0; } }
+      @keyframes flash { 0% { opacity: 0.0; } 15% { opacity: 0.35; } 100% { opacity: 0; } }
       @keyframes blink { 50% { opacity: 0; } }
       @keyframes jitter { 0%, 100% { transform: none; } 92% { transform: translate(2px, -1px); } 94% { transform: translate(-3px, 1px) skewX(4deg); } 96% { transform: none; } }
       @keyframes glitch-a { 0%, 100% { transform: translate(0); clip-path: inset(0 0 100% 0); } 88% { transform: translate(-6px, 0); clip-path: inset(20% 0 55% 0); } 91% { transform: translate(5px, 0); clip-path: inset(60% 0 10% 0); } 94% { clip-path: inset(0 0 100% 0); } }
