@@ -10,6 +10,13 @@ Built for the [Arkiv Global Tour Stop](https://arkiv.devfolio.co/overview), 9–
 
 India orders more internet shutdowns than almost any other country, and website blocking orders under Section 69A of the IT Act are confidential. When a site will not load, people cannot tell whether it is down, blocked by their ISP, or whether the network itself has been switched off. Governments and ISPs call blocks "technical glitches", and the trackers that document them run on servers and domains that can themselves be blocked or pressured into removing data.
 
+## Why India
+
+- **Who uses it:** journalists and digital-rights groups who track shutdowns and blocking in India, people in regions that face repeated shutdowns, and anyone on Jio, Airtel, BSNL or a local broadband provider asking "is this site down, or is my ISP blocking it?"
+- **The problem today:** India has had some of the longest internet shutdowns anywhere, including Jammu and Kashmir from 2019 and Manipur in 2023, and website blocking orders under Section 69A are confidential. Evidence lives in news reports, screenshots and trackers run on servers that can themselves be blocked.
+- **What changes for them:** a probe on an Indian network detects its own ISP's ASN automatically, so every result says *which* provider blocked *what*, *when*. A shutdown shows up as a region going silent. The record stays on Arkiv, where nobody can delete it, and the dashboard and a single curl command read it from anywhere.
+- **It works today:** the probe runs on any laptop with Node.js (`npm run probe`), and the dashboard runs in any browser, including on a phone.
+
 ## What Groundtruth does
 
 Volunteer probes on different networks test the same list of sites. Every result is written to Arkiv, and anyone can read it without Groundtruth's servers. Comparing networks separates censorship from outages:
