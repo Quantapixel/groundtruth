@@ -42,7 +42,7 @@ Volunteer probes on different networks test the same list of sites. Every result
 | Creation flags | Measurements are `readonly` (not even the probe can edit evidence) and `permissionlessExtension` (other networks keep it alive) | [`probe/probe.ts`](probe/probe.ts) |
 | Batch writes | One round = all measurements + the lease renewal, atomically | [`probe/probe.ts`](probe/probe.ts) |
 | `$creator` | Every result is attributed to the probe wallet that created it; a probe can resume only its own lease (`createdBy`) | [`web/main.ts`](web/main.ts), [`probe/probe.ts`](probe/probe.ts) |
-| WebSocket entity events | `watchEntityEvents` over a WebSocket transport, no `fromBlock`: results, lease renewals and corroborations appear live | [`web/main.ts`](web/main.ts) |
+| WebSocket entity events | `watchEntityEvents` over a WebSocket transport, no `fromBlock`: results, lease renewals and corroborations appear live. If the feed drops, the page polls, and a lease only counts as lapsed once a fresh query confirms it, so a dead feed can never fake a shutdown | [`web/main.ts`](web/main.ts) |
 
 Full data contract: [`arkiv/schema.md`](arkiv/schema.md). Friction report: [`arkiv/friction.md`](arkiv/friction.md).
 
@@ -124,6 +124,7 @@ Entities and their creation transactions are visible on the [Tiramisu explorer](
 | [`0xC3c2cca0513ee2538Df4b1e2bd6529cE31abf920`](https://tiramisu.explorer.arkiv.network/address/0xC3c2cca0513ee2538Df4b1e2bd6529cE31abf920) | Probe A |
 | [`0xa07B2FD6776C80D111065ed884dCEF378FFb6F9B`](https://tiramisu.explorer.arkiv.network/address/0xa07B2FD6776C80D111065ed884dCEF378FFb6F9B) | Probe B |
 | [`0x6E4BDdE0b6e207A5D519f7f96FeBD02D2194Ffdc`](https://tiramisu.explorer.arkiv.network/address/0x6E4BDdE0b6e207A5D519f7f96FeBD02D2194Ffdc) | Probe C |
+| [`0x8fEF3395e22BfBf31041d80f9e14462CCEf9498d`](https://tiramisu.explorer.arkiv.network/address/0x8fEF3395e22BfBf31041d80f9e14462CCEf9498d) | Real-network probe (Reliance Jio, AS55836, Tamil Nadu) |
 
 ## Limitations
 

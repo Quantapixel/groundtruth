@@ -330,7 +330,13 @@ const SCENES = {
       lab.stdin.write("s")
       const before = countLines(/lab-site:unreachable/)
       await waitFor(() => countLines(/lab-site:unreachable/) >= before + 3, 180_000, "lab-site unreachable everywhere")
-      await sleep(6000)
+      // Film the page only once it shows the outage itself, not just once the probes logged it.
+      await waitFor(
+        () => evaluate(`[...document.querySelectorAll("#grid tr")].some((r) => /lab-site/.test(r.cells[0]?.textContent) && /down everywhere/i.test(r.cells[1]?.textContent))`),
+        90_000,
+        "dashboard to show lab-site down everywhere",
+      )
+      await sleep(2000)
     }
     await unfocus()
     await chapter("03 // OUTAGE")
@@ -351,7 +357,7 @@ const SCENES = {
     await scrollTo("#networks")
     await badge("&#9654;&#9654; TIME-LAPSE")
     if (DRY) await film(s.dur)
-    else await timelapse(s.dur, () => evaluate(`!!document.querySelector(".region.dark")`))
+    else await timelapse(s.dur, () => evaluate(`[...document.querySelectorAll(".region.dark h3")].some((h) => /IN-LAB-SOUTH/.test(h.textContent))`))
     await badge("")
   },
 
