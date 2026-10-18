@@ -44,9 +44,16 @@ SCRIPT = [
         "Every result is locked on chain, even from the probe that wrote it.",
         "The provider answered zero dot zero dot zero dot zero. The control resolver didn't.",
     ]),
+    ("real", True, [
+        "And it's not just a lab. This probe runs on Reliance Jio, in Tamil Nadu.",
+        "It found its own provider. Your IP address is never published.",
+    ]),
     ("outage", True, ["Switch the test site off, and every network fails. Down everywhere, not blocked."]),
     ("shutdown_a", True, ["Then probe C goes silent. Its heartbeat on Arkiv expires."]),
-    ("shutdown_b", False, ["The region turns silent. A possible shutdown. No server can fake that silence."]),
+    ("shutdown_b", False, [
+        "The region turns silent. A possible shutdown. No server can fake that silence.",
+        "And the page checks Arkiv again first, so a dropped connection can't fake one either.",
+    ]),
     ("evidence", True, [
         "When a second provider sees the same block, the evidence is kept for seven days instead of two.",
         "Anyone can keep it alive. Nobody can change it.",

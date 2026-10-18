@@ -64,6 +64,12 @@ if (!DRY) {
       })
   lab.stdout.on("data", onData)
   lab.stderr.on("data", onData)
+  // A real probe on this machine's own network, next to the simulated lab ISPs.
+  log("starting real-network probe")
+  const real = bg(process.execPath, ["probe/probe.ts", "--key-env", "PROBE_KEY"])
+  const onReal = (d) => onData(Buffer.from(d.toString().split("\n").filter((l) => l.trim()).map((l) => `[real]     ${l}`).join("\n")))
+  real.stdout.on("data", onReal)
+  real.stderr.on("data", onReal)
 }
 const countLines = (re) => labLines.filter((l) => re.test(l)).length
 async function waitFor(pred, timeoutMs, what) {
@@ -289,10 +295,10 @@ const SCENES = {
 
   async lab(s) {
     if (!DRY) {
-      log("waiting for round 1 from all three probes")
-      await waitFor(() => ["probe-a", "probe-b", "probe-c"].every((p) => labLines.some((l) => l.startsWith(`[${p}]`) && /round 1 /.test(l))), 240_000, "round 1")
+      log("waiting for round 1 from all four probes")
+      await waitFor(() => ["probe-a", "probe-b", "probe-c", "real"].every((p) => labLines.some((l) => l.startsWith(`[${p}]`) && /round 1 /.test(l))), 240_000, "round 1")
     }
-    const lines = labLines.filter((l) => /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, TERM_LINES)
+    const lines = labLines.filter((l) => !l.startsWith("[real]") && /sinkhole|lab site|probe 0x|round \d|corroborated/.test(l)).slice(0, TERM_LINES)
     chapterText = "01 // THE LAB"
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; npm run lab</div><pre id="t"></pre></div>`)})`)
@@ -324,6 +330,16 @@ const SCENES = {
     await evaluate(`document.getElementById("detail")?.close()`)
   },
 
+  async real(s) {
+    await unfocus()
+    await chapter("03 // A REAL NETWORK")
+    await scrollTo("#networks")
+    await film(s.dur, async (at) => {
+      await at(0.3)
+      await focus(".region", "Jio", 1.5)
+    })
+  },
+
   async outage(s) {
     if (!DRY) {
       log("stopping the lab site")
@@ -339,7 +355,7 @@ const SCENES = {
       await sleep(2000)
     }
     await unfocus()
-    await chapter("03 // OUTAGE")
+    await chapter("04 // OUTAGE")
     await scrollTo("#now")
     await film(s.dur, async (at) => {
       await at(0.3)
@@ -353,7 +369,7 @@ const SCENES = {
       lab.stdin.write("c")
     }
     await unfocus()
-    await chapter("04 // SHUTDOWN")
+    await chapter("05 // SHUTDOWN")
     await scrollTo("#networks")
     await badge("&#9654;&#9654; TIME-LAPSE")
     if (DRY) await film(s.dur)
@@ -370,7 +386,7 @@ const SCENES = {
 
   async evidence(s) {
     await unfocus()
-    await chapter("05 // EVIDENCE")
+    await chapter("06 // EVIDENCE")
     await scrollTo("#evidence-win")
     await film(s.dur, async (at) => {
       await at(s.sents[0].start + 0.6)
@@ -394,7 +410,7 @@ const SCENES = {
     } catch (e) {
       out = [String(e)]
     }
-    chapterText = "06 // VERIFY"
+    chapterText = "07 // VERIFY"
     await go(STAGE, 800, false)
     await evaluate(`show(${JSON.stringify(`<div class="term glow"><div class="term-bar">&gt; anyone, anywhere. no groundtruth server.</div><pre id="t"></pre></div>`)})`)
     const lines = [`$ curl -s ${RPC} \\`, `   -d '{"method":"arkiv_query","params":["${query}"]}'`, ...out].slice(0, TERM_LINES)

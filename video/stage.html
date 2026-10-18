@@ -92,7 +92,7 @@
       const $ = (id) => document.getElementById(id)
       window.show = (html) => { $("stage").innerHTML = html }
       window.reveal = (i) => document.querySelectorAll(".line")[i]?.classList.add("on")
-      window.termLine = (html) => $("t")?.insertAdjacentHTML("beforeend", html + "\n")
+      window.termLine = (html) => $("t")?.insertAdjacentHTML("beforeend", `<div>${html || "&nbsp;"}</div>`)
     </script>
   </body>
 </html>
