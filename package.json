@@ -5,12 +5,18 @@
   "scripts": {
     "probe": "node probe/probe.ts",
     "sinkhole": "node lab/sinkhole.ts",
-    "labsite": "node lab/site.ts"
+    "labsite": "node lab/site.ts",
+    "dev": "vite web",
+    "build": "vite build web",
+    "preview": "vite preview web"
   },
   "license": "MIT",
   "dependencies": {
     "@arkiv-network/sdk": "^0.8.1",
     "viem": "^2.57.7"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "vite": "^6.4.4"
+  }
 }

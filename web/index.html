@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Groundtruth</title>
+    <meta name="description" content="Is it down, blocked, or switched off? A censorship and outage map that nobody can take down, built on Arkiv." />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Groundtruth</h1>
+        <p class="tagline">Is it <b class="v-down">down</b>, <b class="v-blocked">blocked</b>, or <b class="v-dark">switched off</b>?</p>
+      </div>
+      <div class="status">
+        <span id="ws-status" class="pill">connecting…</span>
+        <span id="head" class="muted"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <p>
+          Volunteer probes on different networks test the same sites and publish every result to
+          <a href="https://arkiv.network" target="_blank" rel="noopener">Arkiv</a>, the Web3 database.
+          This page has no backend: it reads the chain directly, so blocking or seizing a Groundtruth server
+          cannot hide the data. <a href="#verify">Query it yourself ↓</a>
+        </p>
+        <label class="toggle"><input type="checkbox" id="show-lab" checked /> Show lab probes (simulated ISPs, documentation-range ASNs)</label>
+      </section>
+
+      <section>
+        <h2>Networks <span class="muted" id="probe-count"></span></h2>
+        <p class="hint">Each probe holds a heartbeat lease on Arkiv that it renews every round. If a region's probes all go silent, their leases expire and the region goes dark: a suspected shutdown.</p>
+        <div id="regions" class="regions"></div>
+      </section>
+
+      <section>
+        <h2>Right now <span class="muted">(last 30 min)</span></h2>
+        <div class="legend">
+          <span class="pill v-ok">Reachable</span>
+          <span class="pill v-blocked">Blocked: DNS tampering or block page on a network</span>
+          <span class="pill v-down">Down everywhere</span>
+          <span class="pill v-partial">Unreachable on some networks</span>
+          <span class="pill v-slow">Slow on one network</span>
+          <span class="pill v-dark">Network dark</span>
+        </div>
+        <div class="table-wrap"><table id="grid"></table></div>
+        <p id="empty" class="muted"></p>
+      </section>
+
+      <section>
+        <h2>Interference evidence <span class="muted">(up to 7 days)</span></h2>
+        <p class="hint">Every DNS tampering or block-page result. Entries are created read-only, so nobody can edit them, and with permissionless extension, so when a probe on another network sees the same block it extends the evidence from 48 hours to 7 days.</p>
+        <div class="table-wrap"><table id="evidence"></table></div>
+      </section>
+
+      <section>
+        <h2>Live feed</h2>
+        <ol id="feed" class="feed"></ol>
+      </section>
+
+      <section id="verify">
+        <h2>Verify without us</h2>
+        <p>Anyone can read this data straight from the Tiramisu RPC. No Groundtruth server, account or API key:</p>
+        <pre><code id="curl"></code></pre>
+        <p>Or with the Arkiv SDK:</p>
+        <pre><code id="sdk"></code></pre>
+        <p class="hint">Data contract: <a href="https://github.com/Quantapixel/groundtruth/blob/main/arkiv/schema.md" target="_blank" rel="noopener">arkiv/schema.md</a> · Source: <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">github.com/Quantapixel/groundtruth</a> (MIT)</p>
+      </section>
+    </main>
+
+    <dialog id="detail">
+      <form method="dialog"><button class="close" aria-label="Close">×</button></form>
+      <div id="detail-body"></div>
+    </dialog>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
