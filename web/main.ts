@@ -510,9 +510,9 @@ function showError(err: unknown) {
   const banner = $("banner")
   if (/ANON_COST_LIMITED|429/.test(text)) {
     const wait = retryAfterSeconds(err)
-    banner.innerHTML = `<b>Arkiv query limit reached for your network.</b> Arkiv gives every IP a free query budget${
-      wait ? `; yours resets in about ${Math.ceil(wait / 60)} min` : ""
-    }. The data is still on-chain: try again later, from another network, or with the curl command below and an <a href="https://hub.arkiv.network" target="_blank" rel="noopener">Arkiv API key</a>.`
+    banner.innerHTML = `<b>Too many requests from your internet connection right now.</b> Arkiv limits how often one connection can read it for free, and phone networks often share one connection between many people. ${
+      wait ? `Please try again in about ${Math.ceil(wait / 60)} minutes.` : "Please try again in a few minutes."
+    } The records are safe on Arkiv in the meantime; developers can also read them with the command below and an <a href="https://hub.arkiv.network" target="_blank" rel="noopener">Arkiv API key</a>.`
   } else {
     banner.innerHTML = `<b>Could not reach Arkiv.</b> ${esc((err as any)?.shortMessage ?? (err as any)?.message ?? err)}`
   }
