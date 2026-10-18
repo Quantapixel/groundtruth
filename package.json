@@ -1,0 +1,16 @@
+{
+  "name": "groundtruth",
+  "version": "0.1.0",
+  "description": "Is it down, blocked, or switched off? A censorship and outage map on Arkiv.",
+  "scripts": {
+    "probe": "node probe/probe.ts",
+    "sinkhole": "node lab/sinkhole.ts",
+    "labsite": "node lab/site.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@arkiv-network/sdk": "^0.8.1",
+    "viem": "^2.57.7"
+  },
+  "type": "module"
+}

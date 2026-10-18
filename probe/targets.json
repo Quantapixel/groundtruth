@@ -1,0 +1,12 @@
+[
+  { "id": "wikipedia.org", "url": "https://www.wikipedia.org/", "category": "reference" },
+  { "id": "archive.org", "url": "https://archive.org/", "category": "reference" },
+  { "id": "github.com", "url": "https://github.com/", "category": "developer" },
+  { "id": "proton.me", "url": "https://proton.me/", "category": "privacy" },
+  { "id": "signal.org", "url": "https://signal.org/", "category": "messaging" },
+  { "id": "telegram.org", "url": "https://telegram.org/", "category": "messaging" },
+  { "id": "torproject.org", "url": "https://www.torproject.org/", "category": "circumvention" },
+  { "id": "tiktok.com", "url": "https://www.tiktok.com/", "category": "social" },
+  { "id": "x.com", "url": "https://x.com/", "category": "social" },
+  { "id": "reddit.com", "url": "https://www.reddit.com/", "category": "social" }
+]

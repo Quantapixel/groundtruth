@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.env
+dist/
+aes_tool/
+ARKIV_*.md
