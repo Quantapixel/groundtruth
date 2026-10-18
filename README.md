@@ -89,11 +89,11 @@ npm run lab
 | Probe | Network | Region | Resolver |
 |---|---|---|---|
 | A | Lab ISP A (censoring), AS64500 | IN-LAB-NORTH | sinkhole: `torproject.org` → `0.0.0.0` |
-| B | Lab ISP B, AS64501 | IN-LAB-NORTH | system |
+| B | Lab ISP B (censoring), AS64501 | IN-LAB-NORTH | sinkhole: `torproject.org` → `0.0.0.0` |
 | C | Lab ISP C, AS64502 | IN-LAB-SOUTH | system |
 
 While it runs:
-- `torproject.org` shows **Blocked on Lab ISP A** and reachable on B and C.
+- `torproject.org` shows **blocked** on Lab ISPs A and B and working on C. Because two networks saw the same block, each probe extends the other's evidence from 48 hours to 7 days.
 - Press `s` to stop the lab site: it shows **Down everywhere**.
 - Press `c` to stop probe C: after its 3-minute lease expires, **IN-LAB-SOUTH goes dark**.
 

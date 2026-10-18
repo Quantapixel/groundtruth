@@ -17,7 +17,7 @@ const procs = new Map<string, ChildProcess>()
 
 const PROBES: Record<string, string[]> = {
   a: ["--key-env", "PROBE_KEY_A", "--asn", "64500", "--isp", "Lab ISP A (censoring)", "--region", "IN-LAB-NORTH", "--resolver", "127.0.0.1:5533"],
-  b: ["--key-env", "PROBE_KEY_B", "--asn", "64501", "--isp", "Lab ISP B", "--region", "IN-LAB-NORTH"],
+  b: ["--key-env", "PROBE_KEY_B", "--asn", "64501", "--isp", "Lab ISP B (censoring)", "--region", "IN-LAB-NORTH", "--resolver", "127.0.0.1:5533"],
   c: ["--key-env", "PROBE_KEY_C", "--asn", "64502", "--isp", "Lab ISP C", "--region", "IN-LAB-SOUTH"],
 }
 

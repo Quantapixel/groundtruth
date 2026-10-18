@@ -9,7 +9,8 @@
     "dev": "vite web",
     "build": "vite build web",
     "preview": "vite preview web",
-    "lab": "node lab/run.ts"
+    "lab": "node lab/run.ts",
+    "video": "node video/record.mjs"
   },
   "license": "MIT",
   "dependencies": {

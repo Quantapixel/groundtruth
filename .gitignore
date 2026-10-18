@@ -4,3 +4,4 @@ node_modules/
 dist/
 aes_tool/
 ARKIV_*.md
+video/out/
