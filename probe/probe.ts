@@ -46,7 +46,8 @@ const key = process.env[args["key-env"]!]
 if (!key) fail(`Set ${args["key-env"]} (a funded Tiramisu private key) in the environment or .env`)
 
 const account = privateKeyToAccount(key as Hex)
-const publicClient = createPublicClient({ chain: tiramisu, transport: http() })
+// No retries for reads: on a 429 viem would honour Retry-After and stall the probe for up to an hour.
+const publicClient = createPublicClient({ chain: tiramisu, transport: http(undefined, { retryCount: 0, timeout: 20_000 }) })
 const wallet = createWalletClient({ chain: tiramisu, transport: http(), account })
 const resolver = makeResolver(args.resolver)
 const targets: Target[] = JSON.parse(fs.readFileSync(args.targets!, "utf8"))
@@ -109,7 +110,10 @@ async function runRound(round: number) {
   const summary = results.map((r) => `${r.target.id}:${r.verdict}`).join(" ")
   log(`round ${round}  tx ${res.txHash}  ${summary}`)
 
-  await corroborate(results.filter((r) => BLOCKING_VERDICTS.includes(r.verdict)).map((r) => [r.target.id, r.verdict]))
+  // The round is already on-chain; a failed corroboration query must not be reported as a failed round.
+  await corroborate(results.filter((r) => BLOCKING_VERDICTS.includes(r.verdict)).map((r) => [r.target.id, r.verdict])).catch((e) =>
+    log(`corroboration skipped: ${(e as Error).message.split("\n")[0]}`),
+  )
 }
 
 function leaseCreate(ts: number) {

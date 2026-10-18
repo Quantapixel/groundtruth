@@ -17,7 +17,8 @@ const RPC = "https://rpc.tiramisu.db-chain.testnet.arkiv.network"
 const BLOCK_TIME = 2
 const WINDOW_SECONDS = 30 * 60
 
-const client = createPublicClient({ chain: tiramisu, transport: http() })
+// No retries: on a 429 viem would honour Retry-After and silently wait up to an hour.
+const client = createPublicClient({ chain: tiramisu, transport: http(undefined, { retryCount: 0, timeout: 20_000 }) })
 // WebSocket transport, no fromBlock: a real subscription instead of HTTP polling.
 const wsClient = createPublicClient({ chain: tiramisu, transport: webSocket() })
 
@@ -83,18 +84,60 @@ async function fetchAll(where: ReturnType<typeof and>) {
 }
 
 async function loadAll() {
+  // The block number is not part of the query budget, so the lease clocks keep working when queries are limited.
+  state.head = { block: await client.getBlockNumber(), at: Date.now() }
   const since = Math.floor(Date.now() / 1000) - WINDOW_SECONDS
-  const [current, evidence, probes, head] = await Promise.all([
+  const [current, evidence, probes] = await Promise.all([
     fetchAll(currentQuery(since)),
     fetchAll(evidenceQuery()),
     fetchAll(probeQuery()),
-    client.getBlockNumber(),
   ])
-  state.head = { block: head, at: Date.now() }
   state.measurements = new Map(current.map((e) => [e.key!, toMeasurement(e)]))
   state.evidence = new Map(evidence.map((e) => [e.key!, toMeasurement(e)]))
   state.leases = new Map(probes.map((e) => [e.creator!.toLowerCase(), toProbe(e)]))
+  hideBanner()
   renderAll()
+}
+
+// Only what changed since the newest result we hold: a few entities instead of the whole window.
+async function loadIncrement() {
+  let maxTs = 0
+  for (const m of state.measurements.values()) maxTs = Math.max(maxTs, m.ts)
+  const since = maxTs || Math.floor(Date.now() / 1000) - WINDOW_SECONDS
+  const [fresh, probes] = await Promise.all([fetchAll(currentQuery(since)), fetchAll(probeQuery())])
+  for (const e of fresh) {
+    if (state.measurements.has(e.key!)) continue
+    const m = toMeasurement(e)
+    state.measurements.set(m.key, m)
+    if (m.verdict === "dns_tampered" || m.verdict === "block_page") state.evidence.set(m.key, m)
+    feed(`${label(m)} measured <b>${esc(m.target)}</b>: <span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span>`, m.key)
+  }
+  for (const e of probes) {
+    const p = toProbe(e)
+    const c = p.creator.toLowerCase()
+    if (!state.leases.has(c)) feed(`${label(p)} came online (lease created)`, p.key)
+    state.leases.set(c, p)
+  }
+  hideBanner()
+  scheduleRender()
+}
+
+let incrementTimer: ReturnType<typeof setTimeout> | undefined
+function queueIncrement() {
+  if (incrementTimer) return
+  // A probe round lands as one batch; wait briefly so one query picks up the whole round.
+  incrementTimer = setTimeout(() => {
+    incrementTimer = undefined
+    loadIncrement().catch(showError)
+  }, 3000)
+}
+
+// Wallets that have written Groundtruth data. Creations by any other wallet on the chain are ignored.
+function knownProbeWallets(): Set<string> {
+  const s = new Set(state.leases.keys())
+  for (const m of state.measurements.values()) s.add(m.creator.toLowerCase())
+  for (const m of state.evidence.values()) s.add(m.creator.toLowerCase())
+  return s
 }
 
 function headNow(): bigint {
@@ -110,24 +153,11 @@ function secondsLeft(expiresAt: bigint): number {
 function watch() {
   const status = $("ws-status")
   wsClient.watchEntityEvents({
-    onEntityCreated: async (ev) => {
-      status.textContent = "● live"
+    // The event carries the owner, so creations by unrelated wallets cost no query at all.
+    onEntityCreated: (ev) => {
+      status.textContent = "● LIVE"
       status.className = "pill live"
-      const e = await client.getEntity(ev.entityKey).catch(() => undefined)
-      if (!e) return
-      const a = flat(e.attributes as any)
-      if (a.project !== PROJECT) return
-      if (a.kind === "measurement") {
-        const m = toMeasurement(e as any)
-        state.measurements.set(m.key, m)
-        if (m.verdict === "dns_tampered" || m.verdict === "block_page") state.evidence.set(m.key, m)
-        feed(`${label(m)} measured <b>${esc(m.target)}</b>: <span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span>`, m.key)
-      } else if (a.kind === "probe") {
-        const p = toProbe(e as any)
-        state.leases.set(p.creator.toLowerCase(), p)
-        feed(`${label(p)} came online (lease created)`, p.key)
-      }
-      scheduleRender()
+      if (knownProbeWallets().has(ev.owner.toLowerCase())) queueIncrement()
     },
     onExpiryExtended: (ev) => {
       for (const p of state.leases.values()) {
@@ -151,7 +181,7 @@ function watch() {
       console.error(err)
     },
   })
-  status.textContent = "● live"
+  status.textContent = "● LIVE"
   status.className = "pill live"
 }
 
@@ -232,7 +262,7 @@ function renderAll() {
   renderRegions(ps)
   renderGrid(ps)
   renderEvidence()
-  $("head").textContent = state.head.block ? `block ${headNow()}` : ""
+  $("head").textContent = state.head.block ? String(headNow()).padStart(8, "0") : "--------"
 }
 
 function renderRegions(ps: ProbeInfo[]) {
@@ -255,7 +285,7 @@ function renderRegions(ps: ProbeInfo[]) {
         const badge = dark ? `<span class="pill v-dark">DARK: suspected shutdown</span>` : `<span class="pill v-ok">online</span>`
         return `<div class="region ${dark ? "dark" : ""}"><h3><span>${esc(region)}</span>${badge}</h3>${rows}</div>`
       })
-      .join("") || `<p class="muted">No probes have reported in the last 30 minutes.</p>`
+      .join("") || `<p class="nosignal">NO PROBES ONLINE</p>`
 }
 
 function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
@@ -273,7 +303,7 @@ function latestByTargetAndProbe(): Map<string, Map<string, Measurement>> {
 function renderGrid(ps: ProbeInfo[]) {
   const latest = latestByTargetAndProbe()
   const grid = $("grid")
-  $("empty").textContent = latest.size ? "" : "No measurements in the last 30 minutes."
+  $("empty").textContent = latest.size ? "" : "NO SIGNAL :: waiting for probe reports"
   if (!latest.size) {
     grid.innerHTML = ""
     return
@@ -321,7 +351,7 @@ function renderEvidence() {
           return `<tr><td>${new Date(m.ts * 1000).toLocaleString()}</td><td class="target">${esc(m.target)}</td><td>${label(m)}</td><td>${esc(m.region)}</td><td><span class="pill ${verdictClass(m.verdict)}">${m.verdict}</span></td><td>${keep}</td><td class="cell" data-key="${m.key}"><span class="mono">${short(m.key)}</span></td></tr>`
         })
         .join("")
-    : `<tr><td class="muted">No interference recorded.</td></tr>`
+    : `<tr><td class="muted">no interference recorded. yet.</td></tr>`
 }
 
 function feed(html: string, key?: Hex) {
@@ -398,13 +428,40 @@ $<HTMLInputElement>("show-lab").addEventListener("change", (ev) => {
 })
 
 renderVerify()
-await loadAll().catch((e) => {
-  $("empty").textContent = `Could not reach Arkiv: ${e.message}`
-})
+await loadAll().catch(showError)
 watch()
 setInterval(() => {
   checkLeases()
   renderAll()
 }, 5000)
-// Periodic full reload drops measurements that left the 30-minute window and re-syncs the head.
-setInterval(() => loadAll().catch(console.error), 60_000)
+// Full reload every 5 minutes drops measurements that left the 30-minute window and re-syncs the head.
+// It also picks up brand-new probes, whose wallets the live filter does not know yet.
+setInterval(() => loadAll().catch(showError), 5 * 60_000)
+
+// ---------- errors ----------
+
+function retryAfterSeconds(err: unknown): number | undefined {
+  for (let e: any = err; e; e = e.cause) {
+    const v = e.headers?.get?.("Retry-After")
+    if (v) return Number(v)
+  }
+}
+
+function showError(err: unknown) {
+  console.error(err)
+  const text = String((err as any)?.details ?? "") + String((err as any)?.message ?? err)
+  const banner = $("banner")
+  if (/ANON_COST_LIMITED|429/.test(text)) {
+    const wait = retryAfterSeconds(err)
+    banner.innerHTML = `<b>ARKIV PUBLIC QUERY BUDGET USED UP FOR YOUR NETWORK.</b> Arkiv gives every IP a free query budget${
+      wait ? `; yours resets in about ${Math.ceil(wait / 60)} min` : ""
+    }. The data is still on-chain: try again later, from another network, or with the curl command below and an <a href="https://hub.arkiv.network" target="_blank" rel="noopener">Arkiv API key</a>.`
+  } else {
+    banner.innerHTML = `<b>COULD NOT REACH ARKIV.</b> ${esc((err as any)?.shortMessage ?? (err as any)?.message ?? err)}`
+  }
+  banner.hidden = false
+}
+
+function hideBanner() {
+  $("banner").hidden = true
+}

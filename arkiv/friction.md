@@ -81,6 +81,25 @@ Each entry says whether we **reproduced** it ourselves or **inferred** it from t
 - **Workaround:** The probe now checks `getBalance` at start-up and exits with a clear message and the faucet link.
 - **Suggested fix:** Pre-flight the balance in `sendArkivTransaction`, or map the node's error to an `InsufficientFundsError`.
 
+## 11. Anonymous query budget runs out, and the SDK stalls for the whole Retry-After instead of failing (reproduced, high impact)
+
+- **Surface:** Tiramisu public RPC `arkiv_query`; `createPublicClient` with the default viem `http()` transport (SDK 0.8.1, viem 2.57.7)
+- **Steps:** From one IP, run a few dozen dashboard-style queries (`select({ key, creator, expiresAt, attributes })` with `and(eq, eq, gte)`, plus `or()` on `verdict`) over roughly an hour of development. Then:
+  ```bash
+  curl -s -i https://rpc.tiramisu.db-chain.testnet.arkiv.network -H 'content-type: application/json' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"arkiv_query\",\"params\":[\"project = str('groundtruth') AND kind = str('probe')\",{\"select\":{\"key\":true},\"limit\":\"0x1\"}]}"
+  ```
+- **Actual:** `HTTP/2 429`, `ratelimit: limit=10000, remaining=0, reset=1876`, `retry-after: 1876`, body `{"error":"ANON_COST_LIMITED","message":"unauthenticated query budget exhausted; get an API key at https://hub.arkiv.network for a monthly quota"}`. `eth_blockNumber` still works from the same IP.
+- **Then, in the SDK:** `client.select(...).fetch()` and even `Promise.all` with `getBlockNumber()` never resolved within 40 seconds. viem's default transport retries a 429 after the `Retry-After` delay (`node_modules/viem/_esm/utils/buildRequest.js`, line 132), so the call silently waits about 31 minutes. Our dashboard just sat on "connecting…".
+- **Expected:** A documented anonymous budget (size, window, cost per query), and a typed `QueryError` such as `RateLimitedError { retryAfter }` thrown immediately.
+- **Why it matters for this project:** Groundtruth's Censorship Resistance claim is "anyone can read the data without our backend". That holds, but every reader's browser shares its IP's anonymous budget, so a public dashboard has to be frugal by design.
+- **What we changed:**
+  - `http(undefined, { retryCount: 0, timeout: 20_000 })` in the dashboard and probe, so errors surface instead of stalling.
+  - The dashboard shows a banner with the reset time on `ANON_COST_LIMITED`.
+  - The dashboard used to call `getEntity` for *every* `EntityCreated` event on the chain, including other apps' entities. It now ignores events whose `owner` is not a known probe wallet, and on our events runs one debounced incremental query (`ts >= newest ts we hold`).
+  - Full reloads went from every 60 seconds to every 5 minutes.
+- **Suggested fix:** Document the budget and per-query costs (the `Arkiv-Cost` and `Arkiv-Quota-Used-Percent` response headers exist but are not in the docs); have the SDK's default transport not wait on long `Retry-After` values and throw a typed error instead; consider a cheaper or exempt path for small, filtered queries so public read-only dashboards stay usable.
+
 ---
 
 ## Paths that worked first time
