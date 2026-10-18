@@ -54,6 +54,9 @@ const targets: Target[] = JSON.parse(fs.readFileSync(args.targets!, "utf8"))
 const network = await detectNetwork()
 log(`probe ${account.address}  AS${network.asn} ${network.isp}  region=${network.region}  lab=${network.lab}`)
 
+const balance = await publicClient.getBalance({ address: account.address })
+if (balance === 0n) fail(`${account.address} has no testnet GLM. Fund it at https://hub.arkiv.network/faucet`)
+
 let leaseKey = await findLease()
 const intervalMs = Number(args.interval) * 1000
 const maxRounds = Number(args.rounds)

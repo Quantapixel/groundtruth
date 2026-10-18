@@ -8,7 +8,8 @@
     "labsite": "node lab/site.ts",
     "dev": "vite web",
     "build": "vite build web",
-    "preview": "vite preview web"
+    "preview": "vite preview web",
+    "lab": "node lab/run.ts"
   },
   "license": "MIT",
   "dependencies": {
