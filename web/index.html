@@ -8,32 +8,45 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div class="page">
     <header>
       <div class="masthead">
         <h1 class="title-plain">groundtruth</h1>
         <p class="tagline">Is that website down, blocked, or has the internet been switched off?</p>
       </div>
-      <p class="meta">
-        <span id="ws-status" class="pill">connecting</span>
-        <span>Arkiv block <span id="head">--------</span></span>
-        <span>Tiramisu test network</span>
-      </p>
-      <nav>
-        <a href="#networks">Networks</a> |
-        <a href="#now">Right now</a> |
-        <a href="#evidence-win">Evidence</a> |
-        <a href="#feed-win">Live feed</a> |
-        <a href="#verify">Check it yourself</a> |
-        <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">Source code</a>
-      </nav>
     </header>
+
+    <div class="layout">
+    <aside>
+      <div class="side-box">
+        <h3>Sections</h3>
+        <ul class="side-nav">
+          <li><a href="#about">What is this?</a></li>
+          <li><a href="#key">How to read it</a></li>
+          <li><a href="#networks">Networks</a></li>
+          <li><a href="#now">Right now</a></li>
+          <li><a href="#evidence-win">Evidence</a></li>
+          <li><a href="#feed-win">Live feed</a></li>
+          <li><a href="#verify">Check it yourself</a></li>
+          <li><a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">Source code</a></li>
+        </ul>
+      </div>
+      <div class="side-box">
+        <h3>Status</h3>
+        <p class="meta">
+          <span>Connection: <span id="ws-status" class="pill">connecting</span></span>
+          <span>Arkiv block: <span id="head" class="mono">--------</span></span>
+          <span>Network: Tiramisu (test)</span>
+        </p>
+      </div>
+    </aside>
 
     <main>
       <div id="banner" class="banner" role="alert" hidden></div>
 
       <p id="summary" class="summary">Loading results…</p>
 
-      <section class="box">
+      <section class="box" id="about">
         <h2>What is this?</h2>
         <p>
           When a website won't open in India, you usually can't tell why. The site might be down,
@@ -49,7 +62,7 @@
         <label class="toggle"><input type="checkbox" id="show-lab" checked /> Include lab probes (test networks we simulate for demos, not real internet providers)</label>
       </section>
 
-      <section class="box key">
+      <section class="box key" id="key">
         <h2>How to read the results</h2>
         <dl class="legend-list">
           <dt><span class="pill v-ok">works</span></dt>
@@ -101,10 +114,12 @@
         <p class="hint">What every field means: <a href="https://github.com/Quantapixel/groundtruth/blob/main/arkiv/schema.md" target="_blank" rel="noopener">arkiv/schema.md</a></p>
       </section>
     </main>
+    </div>
 
     <footer>
       <p>Groundtruth · open source (MIT) · <a href="https://github.com/Quantapixel/groundtruth" target="_blank" rel="noopener">github.com/Quantapixel/groundtruth</a></p>
     </footer>
+    </div>
 
     <dialog id="detail">
       <form method="dialog"><button class="close" aria-label="Close">close</button></form>
