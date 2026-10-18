@@ -71,15 +71,24 @@ function toProbe(e: { key?: Hex; creator?: Hex; expiresAt?: bigint; attributes?:
 
 const currentQuery = (since: number) =>
   and(eq("project", PROJECT), eq("kind", "measurement"), gte("ts", since))
+// The last 24 hours fit in one page; queries cannot be sorted, so an open-ended one would return an arbitrary 200.
+const EVIDENCE_WINDOW_SECONDS = 24 * 3600
 const evidenceQuery = () =>
-  and(eq("project", PROJECT), eq("kind", "measurement"), or(eq("verdict", "dns_tampered"), eq("verdict", "block_page")))
+  and(
+    eq("project", PROJECT),
+    eq("kind", "measurement"),
+    or(eq("verdict", "dns_tampered"), eq("verdict", "block_page")),
+    gte("ts", Math.floor(Date.now() / 1000) - EVIDENCE_WINDOW_SECONDS),
+  )
 const probeQuery = () => and(eq("project", PROJECT), eq("kind", "probe"))
 
-async function fetchAll(where: ReturnType<typeof and>) {
+// Arkiv allows one connection 600 query units a minute and charges 100 per page (200 entities at
+// most), so a full load must stay well under 6 pages. Each query gets a page cap.
+async function fetchAll(where: ReturnType<typeof and>, maxPages = 1) {
   const out = []
   let page = await client.select(SELECT).where(where).limit(200).fetch()
   out.push(...page.entities)
-  while (page.hasNextPage()) {
+  for (let n = 1; n < maxPages && page.hasNextPage(); n++) {
     page = await page.next()
     out.push(...page.entities)
   }
@@ -91,7 +100,7 @@ async function loadAll() {
   state.head = { block: await client.getBlockNumber(), at: Date.now() }
   const since = Math.floor(Date.now() / 1000) - WINDOW_SECONDS
   const [current, evidence, probes] = await Promise.all([
-    fetchAll(currentQuery(since)),
+    fetchAll(currentQuery(since), 2),
     fetchAll(evidenceQuery()),
     fetchAll(probeQuery()),
   ])
@@ -109,7 +118,7 @@ async function loadIncrement() {
   let maxTs = 0
   for (const m of state.measurements.values()) maxTs = Math.max(maxTs, m.ts)
   const since = maxTs || Math.floor(Date.now() / 1000) - WINDOW_SECONDS
-  const [fresh, probes] = await Promise.all([fetchAll(currentQuery(since)), fetchAll(probeQuery())])
+  const [fresh, probes] = await Promise.all([fetchAll(currentQuery(since), 2), fetchAll(probeQuery())])
   for (const e of fresh) {
     if (state.measurements.has(e.key!)) continue
     const m = toMeasurement(e)

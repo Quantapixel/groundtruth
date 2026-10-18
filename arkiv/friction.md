@@ -119,6 +119,16 @@ Each entry says whether we **reproduced** it ourselves or **inferred** it from t
 - **What we changed:** on `onError` the dashboard falls back to polling one incremental query every 30 seconds, and a lease is only treated as lapsed after a query made after its expiry confirms it (entry 2).
 - **Suggested fix:** document WebSocket limits and whether they share the query budget; send a close frame with a reason (for example `RATE_LIMITED`, retry-after) instead of a bare 429 on upgrade; have the SDK resubscribe after reconnecting.
 
+## 14. A second, per-minute budget makes pagination fail with a vague error (reproduced, high impact)
+
+- **Surface:** Tiramisu public RPC `arkiv_query` with cursor pagination; `SelectQueryBuilder.fetch()` / `next()` (SDK 0.8.1)
+- **Steps:** with about 450 measurements in a 30-minute window, load the dashboard: three queries in parallel, two of them paging with `.limit(200)` and `next()`.
+- **Expected:** all pages load, or a rate-limit error that says which limit and when it resets.
+- **Actual:** a page request fails with `Query rejected (cursor, -32005): Request exceeds defined limit`. The response headers show a second budget, `ratelimit: limit=600` per minute, next to the 10,000 per ~30 minutes, and every query costs `arkiv-cost: 100`, whatever its size. That is six queries a minute per IP. The node also caps `limit` at 200 (`limit 1000 exceeds the node maximum of 200`), so any query with more than 200 results costs a page per 200, and queries cannot be sorted, so a capped query returns an arbitrary 200.
+- **Impact:** the live dashboard showed nothing once the data grew past a few pages, for every visitor.
+- **What we changed:** at most four pages per full load: two for the 30-minute window, one for the probes, and one for evidence, now restricted to the last 24 hours so it fits in a page (`fetchAll(where, maxPages)` in `web/main.ts`).
+- **Suggested fix:** document both budgets and the per-query cost; return the same typed `429`/`RateLimit` signal as the 30-minute budget instead of `-32005`; charge by entities returned rather than a flat 100, or allow sorting so one page can return the newest results.
+
 ---
 
 ## Paths that worked first time
